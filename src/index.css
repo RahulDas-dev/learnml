@@ -1,0 +1,246 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
+
+:root {
+  /* Light mode — white/gray/black */
+  --background: 0 0% 100%;
+  --foreground: 0 0% 4%;
+
+  --card: 0 0% 98%;
+  --card-foreground: 0 0% 4%;
+
+  --popover: 0 0% 98%;
+  --popover-foreground: 0 0% 4%;
+
+  --primary: 0 0% 6%;
+  --primary-foreground: 0 0% 98%;
+
+  --secondary: 0 0% 94%;
+  --secondary-foreground: 0 0% 20%;
+
+  --muted: 0 0% 92%;
+  --muted-foreground: 0 0% 45%;
+
+  --accent: 0 0% 88%;
+  --accent-foreground: 0 0% 10%;
+
+  --destructive: 0 0% 20%;
+  --destructive-foreground: 0 0% 98%;
+
+  --border: 0 0% 88%;
+  --input: 0 0% 88%;
+  --ring: 0 0% 6%;
+
+  --radius: 0.75rem;
+
+  /* Custom tokens */
+  --shadow-card: 0 1px 4px hsl(0 0% 0% / 0.06), 0 4px 16px hsl(0 0% 0% / 0.04);
+  --shadow-elevated: 0 8px 32px hsl(0 0% 0% / 0.1);
+  --shadow-focus: 0 0 0 3px hsl(0 0% 6% / 0.12);
+
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  --transition-base: all 0.25s var(--ease-smooth);
+}
+
+.dark {
+  /* Dark mode — Onyx (#353935, hsl 120 4% 22%) based */
+  --background: 120 4% 10%;
+  --foreground: 120 3% 93%;
+
+  --card: 120 4% 14%;
+  --card-foreground: 120 3% 93%;
+
+  --popover: 120 4% 14%;
+  --popover-foreground: 120 3% 93%;
+
+  --primary: 120 3% 92%;
+  --primary-foreground: 120 4% 10%;
+
+  --secondary: 120 4% 19%;
+  --secondary-foreground: 120 3% 72%;
+
+  --muted: 120 4% 19%;
+  --muted-foreground: 120 3% 50%;
+
+  --accent: 120 4% 24%;
+  --accent-foreground: 120 3% 90%;
+
+  --destructive: 120 3% 75%;
+  --destructive-foreground: 120 4% 10%;
+
+  --border: 120 4% 22%;
+  --input: 120 4% 22%;
+  --ring: 120 3% 88%;
+}
+
+* { border-color: hsl(var(--border)); }
+
+html { color-scheme: light; }
+html.dark { color-scheme: dark; }
+
+body {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: 'Inter', sans-serif;
+  min-height: 100vh;
+}
+
+h1, h2, h3, h4 {
+  font-family: 'Syne', sans-serif;
+}
+
+code, .mono {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Subtle grid texture */
+.grid-pattern {
+  background-image:
+    linear-gradient(hsl(var(--foreground) / 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--foreground) / 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Answer options */
+.answer-option {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  transition: var(--transition-base);
+  cursor: pointer;
+  border-radius: 0.625rem;
+}
+
+.answer-option:hover:not(:disabled) {
+  border-color: hsl(var(--foreground) / 0.35);
+  background: hsl(var(--secondary));
+}
+
+.answer-option.selected {
+  border-color: hsl(var(--foreground) / 0.6);
+  background: hsl(var(--secondary));
+}
+
+.answer-option.correct {
+  border-color: hsl(var(--foreground));
+  background: hsl(var(--foreground) / 0.06);
+}
+
+.answer-option.incorrect {
+  border-color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted) / 0.5);
+}
+
+/* Typing cursor */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.cursor-blink::after {
+  content: '|';
+  animation: blink 0.8s infinite;
+  color: hsl(var(--foreground));
+}
+
+/* Fade in animations */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in { animation: fadeInUp 0.4s var(--ease-smooth) forwards; }
+.fade-in-1 { animation: fadeInUp 0.4s var(--ease-smooth) 0.05s forwards; opacity: 0; }
+.fade-in-2 { animation: fadeInUp 0.4s var(--ease-smooth) 0.1s forwards; opacity: 0; }
+
+/* Explanation prose */
+.explanation-content {
+  line-height: 1.85;
+  color: hsl(var(--foreground) / 0.88);
+}
+.explanation-content p { margin-bottom: 1rem; }
+.explanation-content h2 {
+  color: hsl(var(--foreground));
+  font-family: 'Syne', sans-serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin: 1.8rem 0 0.5rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid hsl(var(--border));
+}
+.explanation-content h3 {
+  color: hsl(var(--foreground));
+  font-family: 'Syne', sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 1.2rem 0 0.4rem;
+}
+.explanation-content code {
+  background: hsl(var(--secondary));
+  border: 1px solid hsl(var(--border));
+  padding: 0.1em 0.4em;
+  border-radius: 3px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.82em;
+  color: hsl(var(--foreground));
+}
+.explanation-content ul, .explanation-content ol {
+  padding-left: 1.4rem;
+  margin-bottom: 1rem;
+}
+.explanation-content li { margin-bottom: 0.35rem; }
+.explanation-content strong { color: hsl(var(--foreground)); font-weight: 600; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground)); }
+
+/* Score circle */
+.score-ring {
+  transition: stroke-dashoffset 1s var(--ease-smooth);
+}
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: white !important; color: black !important; }
+  .explanation-content { color: black !important; }
+}

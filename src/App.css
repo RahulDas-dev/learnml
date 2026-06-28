@@ -1,0 +1,8 @@
+/* App-level styles - minimal, design system handles everything */
+@media print {
+  .no-print { display: none !important; }
+  body { background: white !important; color: black !important; }
+  .card-glow { box-shadow: none !important; border: 1px solid #ccc !important; background: white !important; }
+  .explanation-content { color: black !important; }
+  .explanation-content h2, .explanation-content h3 { color: #4f46e5 !important; }
+}

@@ -1,0 +1,198 @@
+// Chrome Built-in AI (Prompt API) Integration
+// Docs: https://developer.chrome.com/docs/ai/prompt-api
+
+// ── Multimodal prompt types ───────────────────────────────────────────────────
+// Ref: https://developer.chrome.com/docs/ai/prompt-api#multimodal_capabilities
+
+/** A single content part inside a prompt message */
+export type PromptContentPart =
+  | { type: 'text'; value: string }
+  | { type: 'image'; value: ImageBitmap | HTMLImageElement | SVGImageElement | HTMLVideoElement | HTMLCanvasElement | OffscreenCanvas | Blob | ImageData }
+  | { type: 'audio'; value: AudioBuffer | ArrayBufferView | ArrayBuffer | Blob };
+
+/** A full prompt message with role (used for multimodal) */
+export interface PromptMessage {
+  role: 'user' | 'assistant';
+  content: PromptContentPart[];
+}
+
+/**
+ * PromptInput:
+ *  - string → plain text prompt (simple case)
+ *  - PromptMessage[] → multimodal: [{ role: "user", content: [{type:"image",value:...}, {type:"text",value:...}] }]
+ */
+export type PromptInput = string | PromptMessage[];
+
+// ── Chrome Prompt API type declarations ───────────────────────────────────────
+
+declare global {
+  var LanguageModel: {
+    availability: (options?: Pick<LanguageModelCreateOptions, 'expectedInputs' | 'expectedOutputs'>) => Promise<'available' | 'downloadable' | 'downloading' | 'unavailable'>;
+    create: (options?: LanguageModelCreateOptions) => Promise<LanguageModelSession>;
+  } | undefined;
+}
+
+type ExpectedIOType =
+  | { type: 'text'; languages?: string[] }
+  | { type: 'image' }
+  | { type: 'audio' };
+
+interface LanguageModelCreateOptions {
+  initialPrompts?: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+  expectedInputs?: ExpectedIOType[];
+  expectedOutputs?: ExpectedIOType[];
+  monitor?: (m: EventTarget) => void;
+  temperature?: number;
+  topK?: number;
+}
+
+interface PromptOptions {
+  signal?: AbortSignal;
+  responseConstraint?: Record<string, unknown>;
+}
+
+export interface LanguageModelSession {
+  promptStreaming: (input: PromptInput, options?: PromptOptions) => ReadableStream<string>;
+  prompt: (input: PromptInput, options?: PromptOptions) => Promise<string>;
+  clone: () => Promise<LanguageModelSession>;
+  contextUsage?: number;
+  contextWindow?: number;
+  destroy?: () => void;
+}
+
+export type AIStatus =
+  | 'checking'
+  | 'downloading'
+  | 'ready'
+  | 'unavailable'
+  | 'unsupported'
+  | 'error';
+
+export interface AIInitResult {
+  status: AIStatus;
+  session?: LanguageModelSession;
+  message?: string;
+  downloadProgress?: number;
+}
+
+// ── Session initialisation ────────────────────────────────────────────────────
+
+export async function initLanguageModel(
+  systemPrompt: string,
+  // null = download complete, model loading into memory (indeterminate)
+  onDownloadProgress?: (percent: number | null) => void,
+  options?: { temperature?: number; topK?: number; expectedInputs?: ExpectedIOType[]; expectedOutputs?: ExpectedIOType[] }
+): Promise<AIInitResult> {
+  if (typeof LanguageModel === 'undefined') {
+    return {
+      status: 'unsupported',
+      message:
+        'Chrome Built-in AI is not available. You need Chrome 138+ with the Prompt API flag enabled at chrome://flags/#prompt-api-for-gemini-nano.',
+    };
+  }
+
+  try {
+    // Docs: always pass the same expectedInputs/expectedOutputs to availability() as you pass to create()
+    const availability = await LanguageModel.availability({
+      ...(options?.expectedInputs  != null && { expectedInputs:  options.expectedInputs }),
+      ...(options?.expectedOutputs != null && { expectedOutputs: options.expectedOutputs }),
+    });
+
+    if (availability === 'unavailable') {
+      return {
+        status: 'unavailable',
+        message:
+          'Gemini Nano is not ready. To fix:\nGo to chrome://components/ → find "Optimization Guide On Device Model" → click "Check for update" and wait.\nFully quit and relaunch Chrome.\nMake sure Hardware Acceleration is ON in chrome://settings/system.',
+      };
+    }
+
+    if (availability === 'downloadable' || availability === 'downloading') {
+      onDownloadProgress?.(0);
+    }
+
+    const session = await LanguageModel.create({
+      initialPrompts: [{ role: 'system', content: systemPrompt }],
+      ...(options?.temperature != null && { temperature: options.temperature }),
+      ...(options?.topK != null && { topK: options.topK }),
+      ...(options?.expectedInputs  != null && { expectedInputs:  options.expectedInputs }),
+      ...(options?.expectedOutputs != null && { expectedOutputs: options.expectedOutputs }),
+      monitor(m) {
+        m.addEventListener('downloadprogress', (e: Event) => {
+          const progress = e as Event & { loaded: number };
+          if (progress.loaded >= 1) {
+            // Download complete — model is now being loaded into memory (indeterminate)
+            onDownloadProgress?.(null);
+          } else {
+            onDownloadProgress?.(Math.round(progress.loaded * 100));
+          }
+        });
+      },
+    });
+
+    return { status: 'ready', session };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return { status: 'error', message: `Failed to initialize: ${message}` };
+  }
+}
+
+// ── Prompt helpers ────────────────────────────────────────────────────────────
+
+export async function streamResponse(
+  session: LanguageModelSession,
+  input: PromptInput,
+  onChunk: (text: string) => void,
+  signal?: AbortSignal,
+  responseConstraint?: Record<string, unknown>
+): Promise<string> {
+  const options: PromptOptions = { signal };
+  if (responseConstraint) options.responseConstraint = responseConstraint;
+
+  const stream = session.promptStreaming(input, options);
+  const reader = stream.getReader();
+  let fullText = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      fullText += value;
+      onChunk(fullText);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return fullText.trimEnd();
+}
+
+export async function getFullResponse(
+  session: LanguageModelSession,
+  input: PromptInput,
+  signal?: AbortSignal,
+  responseConstraint?: Record<string, unknown>
+): Promise<string> {
+  const options: PromptOptions = { signal };
+  if (responseConstraint) options.responseConstraint = responseConstraint;
+  return session.prompt(input, options);
+}
+
+// ── Image helpers ─────────────────────────────────────────────────────────────
+
+/**
+ * Convert a base64-encoded PNG/JPEG string to an ImageBitmap.
+ * Returns null if conversion fails (e.g. in non-browser environments).
+ */
+export async function base64ToImageBitmap(base64: string): Promise<ImageBitmap | null> {
+  try {
+    // Strip data-URL prefix if present
+    const raw = base64.includes(',') ? base64.split(',')[1] : base64;
+    const binary = atob(raw);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+    const blob = new Blob([bytes], { type: 'image/png' });
+    return await createImageBitmap(blob);
+  } catch {
+    return null;
+  }
+}
