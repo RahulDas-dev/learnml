@@ -4,6 +4,9 @@ A privacy-first, browser-native Data Science learning app powered by **Chrome's 
 
 Built with **React 19 · TypeScript 6 · Vite 8 · Tailwind CSS v4 · shadcn/ui**.
 
+🔗 **Live demo:** https://rahuldas-dev.github.io/learnml/
+_(Requires Chrome 138+ with the Prompt API for Gemini Nano enabled — the AI runs entirely on-device.)_
+
 ---
 
 ## Core Features

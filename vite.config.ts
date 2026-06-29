@@ -5,6 +5,7 @@ import { defineConfig } from "vite";
 import { viteSingleFile } from "vite-plugin-singlefile";
 
 export default defineConfig({
+  base: "/learnml/",
   plugins: [react(), tailwindcss(), viteSingleFile()],
   resolve: {
     alias: {
