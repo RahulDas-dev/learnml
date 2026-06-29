@@ -9,6 +9,7 @@ import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
+  Home,
   Loader,
   MessageCircle,
 } from 'lucide-react';
@@ -47,7 +48,12 @@ export function ExplainSlides() {
               {currentSlide + 1}/{outlines.length}
             </span>
           </div>
-          <ThemeToggle />
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" onClick={onGoHome} title="Home" aria-label="Home">
+              <Home size={16} strokeWidth={1.75} />
+            </Button>
+            <ThemeToggle />
+          </div>
         </div>
         {/* Progress bar */}
         <Progress value={progress} />

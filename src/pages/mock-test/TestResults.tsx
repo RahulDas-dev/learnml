@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -19,6 +20,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ArrowLeft,
+  Home,
 } from 'lucide-react';
 
 function isCorrectAnswer(answer: AnswerValue, correct: number | number[]): boolean {
@@ -31,6 +33,7 @@ function isCorrectAnswer(answer: AnswerValue, correct: number | number[]): boole
 }
 
 export function TestResults() {
+  const navigate = useNavigate();
   const {
     questions,
     answers,
@@ -94,8 +97,6 @@ export function TestResults() {
   const incorrectArc = total > 0 ? (incorrect / total) * circumference : 0;
   const skippedArc   = total > 0 ? (skipped   / total) * circumference : 0;
 
-  const maxSec = Math.max(...questionTimings.filter(t => t > 0), 1);
-
   // ── Full-page explanation view ─────────────────────────────────────────────
   if (explainIdx !== null && questions[explainIdx]) {
     const q = questions[explainIdx];
@@ -121,6 +122,9 @@ export function TestResults() {
             <Badge variant="secondary" className="font-normal text-[10px] mono">
               {q.answerMode === 'multiple' ? 'Multi-select' : 'Single select'}
             </Badge>
+            <Button variant="ghost" size="icon" onClick={() => navigate('/')} title="Home" aria-label="Home" className="h-8 w-8">
+              <Home size={15} />
+            </Button>
             <ThemeToggle />
           </div>
         </nav>
@@ -228,7 +232,12 @@ export function TestResults() {
       <nav className="border-b border-border bg-background/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-3xl mx-auto px-6 h-14 flex items-center justify-between">
           <span className="font-bold text-sm text-foreground" style={{ fontFamily: 'Syne, sans-serif' }}>Results</span>
-          <ThemeToggle />
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" onClick={() => navigate('/')} title="Home" aria-label="Home">
+              <Home size={16} strokeWidth={1.75} />
+            </Button>
+            <ThemeToggle />
+          </div>
         </div>
       </nav>
 
@@ -237,75 +246,69 @@ export function TestResults() {
         {/* ── Hero card ── */}
         <div className="mb-6 fade-in rounded-2xl bg-card shadow-sm" style={{ overflow: 'visible' }}>
 
-          {/* Chart area */}
-          <div className="relative rounded-t-2xl" style={{ height: 450, overflow: 'visible' }}>
+          {/* Donut score ring */}
+          <div className="rounded-t-2xl flex items-center justify-center pt-10 pb-6">
+            <div className="relative" style={{ width: 210, height: 210 }}>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-[132px] h-[132px] rounded-full bg-card/85 backdrop-blur-sm" />
+              </div>
+              <svg width="210" height="210" viewBox="0 0 128 128" className="-rotate-90 absolute inset-0">
+                <circle cx="64" cy="64" r="52" fill="none" stroke="hsl(var(--border))" strokeWidth="11" />
+                {skipped > 0 && (
+                  <circle cx="64" cy="64" r="52" fill="none" stroke="#cbd5e1" strokeWidth="11"
+                    strokeDasharray={`${skippedArc} ${circumference}`}
+                    strokeDashoffset={circumference - (correctArc + incorrectArc)} />
+                )}
+                {incorrect > 0 && (
+                  <circle cx="64" cy="64" r="52" fill="none" stroke="#64748b" strokeWidth="11"
+                    strokeDasharray={`${incorrectArc} ${circumference}`}
+                    strokeDashoffset={circumference - correctArc} />
+                )}
+                {score > 0 && (
+                  <circle cx="64" cy="64" r="52" fill="none" stroke="hsl(var(--foreground))" strokeWidth="11"
+                    strokeDasharray={`${correctArc} ${circumference}`}
+                    strokeDashoffset={circumference}
+                    className="score-ring" />
+                )}
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-3xl font-bold text-foreground leading-none" style={{ fontFamily: 'Syne, sans-serif' }}>{pct}%</span>
+                <span className="text-[10px] text-muted-foreground mono mt-1 max-w-[90px] text-center truncate">{topic}</span>
+                <span className="text-[9px] text-muted-foreground/60 capitalize mt-0.5">{level}</span>
+              </div>
+            </div>
+          </div>
 
-            {/* Bars — bottom-anchored, semi-transparent, z-10 */}
-            <div
-              className="absolute inset-x-0 bottom-0 flex items-end gap-[3px] px-3 z-10"
-              style={{ height: '100%', overflow: 'visible' }}
-            >
-              {questions.map((_, i) => {
+          {/* Per-question squares — hover for time spent, click to open explanation */}
+          <div className="px-6 pb-5">
+            <p className="text-[10px] mono text-muted-foreground/70 text-center mb-2.5">Tap a question for its explanation</p>
+            <div className="flex flex-wrap justify-center gap-1.5">
+              {questions.map((q, i) => {
                 const secs = questionTimings[i] ?? 0;
-                // 50% floor ensures bars always overlap the donut; 42pt range for visible differences
-                const pctH = Math.max((secs / maxSec) * 42 + 50, 50);
+                const isSkipped = answers[i] === null;
+                const correct = isCorrectAnswer(answers[i], q.correct);
                 return (
-                  <div
+                  <button
                     key={i}
-                    className="group/bar relative flex-1 cursor-pointer flex flex-col justify-end"
-                    style={{ height: '100%', overflow: 'visible' }}
                     onClick={() => setExplainIdx(i)}
+                    className={`group/sq relative w-7 h-7 rounded-md flex items-center justify-center text-[10px] font-bold mono cursor-pointer transition-transform duration-150 hover:-translate-y-0.5 ${
+                      isSkipped
+                        ? 'bg-secondary text-muted-foreground border border-border'
+                        : correct
+                        ? 'bg-foreground text-background'
+                        : 'bg-muted text-foreground border border-border'
+                    }`}
                   >
+                    {i + 1}
                     {/* Tooltip */}
-                    <div
-                      className="absolute left-1/2 -translate-x-1/2 opacity-0 group-hover/bar:opacity-100 transition-opacity duration-100 pointer-events-none"
-                      style={{ bottom: `calc(${pctH}% + 6px)`, zIndex: 50 }}
-                    >
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 opacity-0 group-hover/sq:opacity-100 transition-opacity duration-100 pointer-events-none z-50">
                       <div className="bg-foreground text-background text-[9px] font-medium px-2 py-1 rounded-md whitespace-nowrap flex items-center gap-1 shadow-lg">
                         <MessageSquareDot size={8} /> Q{i + 1} · {secs}s
                       </div>
                     </div>
-                    {/* Bar */}
-                    <div
-                      className="w-full rounded-t-[4px] bg-slate-400/50 dark:bg-slate-500/50 group-hover/bar:bg-slate-500/65 dark:group-hover/bar:bg-slate-400/65 transition-colors duration-150"
-                      style={{ height: `${pctH}%` }}
-                    />
-                  </div>
+                  </button>
                 );
               })}
-            </div>
-
-            {/* Donut — centered, z-0 (behind bars) */}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
-              <div className="relative" style={{ width: 210, height: 210 }}>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-[132px] h-[132px] rounded-full bg-card/85 backdrop-blur-sm" />
-                </div>
-                <svg width="210" height="210" viewBox="0 0 128 128" className="-rotate-90 absolute inset-0">
-                  <circle cx="64" cy="64" r="52" fill="none" stroke="hsl(var(--border))" strokeWidth="11" />
-                  {skipped > 0 && (
-                    <circle cx="64" cy="64" r="52" fill="none" stroke="#cbd5e1" strokeWidth="11"
-                      strokeDasharray={`${skippedArc} ${circumference}`}
-                      strokeDashoffset={circumference - (correctArc + incorrectArc)} />
-                  )}
-                  {incorrect > 0 && (
-                    <circle cx="64" cy="64" r="52" fill="none" stroke="#64748b" strokeWidth="11"
-                      strokeDasharray={`${incorrectArc} ${circumference}`}
-                      strokeDashoffset={circumference - correctArc} />
-                  )}
-                  {score > 0 && (
-                    <circle cx="64" cy="64" r="52" fill="none" stroke="hsl(var(--foreground))" strokeWidth="11"
-                      strokeDasharray={`${correctArc} ${circumference}`}
-                      strokeDashoffset={circumference}
-                      className="score-ring" />
-                  )}
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-3xl font-bold text-foreground leading-none" style={{ fontFamily: 'Syne, sans-serif' }}>{pct}%</span>
-                  <span className="text-[10px] text-muted-foreground mono mt-1 max-w-[90px] text-center truncate">{topic}</span>
-                  <span className="text-[9px] text-muted-foreground/60 capitalize mt-0.5">{level}</span>
-                </div>
-              </div>
             </div>
           </div>
 

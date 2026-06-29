@@ -1,20 +1,21 @@
-import { Loader } from 'lucide-react';
+import { LoaderPinwheel } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { useMockTest } from '@/hooks/useMockTest';
 
 export function TestGenerating() {
-  const { topic, level, rawStream, totalQuestions, onCancel } = useMockTest();
+  const { topic, level, genStage, generatedCount, rawStream, totalQuestions, onCancel } = useMockTest();
 
-  const questionsDetected = (rawStream.match(/"question"\s*:/g) || []).length;
-  const genProgress = Math.min(Math.round((questionsDetected / totalQuestions) * 100), 99);
+  const planning = genStage === 'planning';
+  const questionsDetected = generatedCount;
+  const allDone = !planning && questionsDetected >= totalQuestions;
+  const genProgress = planning ? 4 : Math.min(Math.round((questionsDetected / totalQuestions) * 100), 99);
   const steps = [
     { label: 'Topic validated', done: true },
-    { label: 'Crafting questions', done: questionsDetected > 0 },
-    { label: 'Structuring answer options', done: questionsDetected >= 4 },
-    { label: 'Building remaining questions', done: questionsDetected >= 7 },
-    { label: 'Finalizing test', done: questionsDetected >= totalQuestions },
+    { label: 'Planning questions', done: !planning },
+    { label: 'Generating questions', done: allDone },
+    { label: 'Finalizing test', done: allDone },
   ];
 
   return (
@@ -26,7 +27,7 @@ export function TestGenerating() {
           <div className="border-b border-border px-7 py-5 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-lg bg-secondary border border-border flex items-center justify-center">
-                <Loader size={14} strokeWidth={2} className="animate-spin text-foreground" />
+                <LoaderPinwheel size={14} strokeWidth={2} className="animate-spin text-foreground" />
               </div>
               <div>
                 <p className="text-sm font-bold text-foreground" style={{ fontFamily: 'Syne, sans-serif' }}>Generating Test</p>
@@ -103,9 +104,9 @@ export function TestGenerating() {
             <div className="bg-secondary rounded-xl border border-border overflow-hidden">
               <div className="px-4 py-2 border-b border-border flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-foreground animate-pulse" />
-                <span className="text-xs mono text-muted-foreground">Live output</span>
+                <span className="text-xs mono text-muted-foreground">Streamed Token</span>
               </div>
-              <div className="relative px-4 py-3 max-h-24 overflow-hidden">
+              <div className="relative px-4 py-3 h-24 overflow-hidden">
                 <pre className="text-xs text-muted-foreground mono whitespace-pre-wrap break-all leading-relaxed cursor-blink">
                   {rawStream.slice(-200) || '…'}
                 </pre>

@@ -1,5 +1,10 @@
 declare module 'react-katex' {
   import type { ReactNode } from 'react';
-  export function InlineMath(props: { math: string }): ReactNode;
-  export function BlockMath(props: { math: string }): ReactNode;
+  interface MathProps {
+    math: string;
+    errorColor?: string;
+    renderError?: (error: Error) => ReactNode;
+  }
+  export function InlineMath(props: MathProps): ReactNode;
+  export function BlockMath(props: MathProps): ReactNode;
 }

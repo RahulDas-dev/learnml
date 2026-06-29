@@ -2,53 +2,123 @@ import { BaseAgent } from './BaseAgent';
 import type { AgentInitOptions } from './BaseAgent';
 import { streamResponse } from './promptApi';
 import type { LanguageModelSession } from './promptApi';
-import { pickDistribution } from '@/lib/config';
 import type { MCQQuestion, OptionContentType } from '@/lib/config';
-import { MCQQuestionJsonSchema } from './schemas';
+import { SingleMCQQuestionJsonSchema } from './schemas';
 import type { QuestionBlueprint } from './schemas';
+
+// Max in-flight per-question generation calls. On-device Gemini Nano degrades if
+// hit with 15-20 simultaneous prompt() calls, so we bound concurrency.
+const GEN_CONCURRENCY = 4;
+
+// Hard ceiling on how long a single question may stream before we abort it.
+// Gemini Nano sometimes falls into a repetition loop (e.g. "\boldsymbol{\boldsymbol{…")
+// that never closes the JSON, which would otherwise hang the whole batch.
+const PER_QUESTION_TIMEOUT_MS = 30000;
+
+// A real single-question JSON object is well under this. If the stream blows past
+// it, the model is looping — abort immediately rather than waiting for the timeout.
+const RUNAWAY_CHAR_LIMIT = 4000;
 
 export class QuestionGeneratorAgent extends BaseAgent {
   protected readonly systemPrompt =
-    'You are a Data Science quiz generator. Follow instructions exactly. Output only valid JSON when asked for questions.';
+    'You are a Data Science quiz generator. Follow instructions exactly. Output only valid JSON when asked for a question.';
 
   async init(options?: AgentInitOptions) {
-    return super.init({ temperature: 1.5, topK: 40, ...options });
+    return super.init({ temperature: 0.9, topK: 40, ...options });
   }
 
   /**
-   * Generate questions guided by the blueprint from PlannerAgent.
-   * Streams generation and calls onProgress with an estimated completed count.
+   * Generate every question from the planner's blueprint — one model call per
+   * question, run through a bounded worker pool (at most GEN_CONCURRENCY in flight).
+   * `onProgress` reports how many have finished. `onStream` receives the latest
+   * streamed tokens from whichever question is currently writing (so the UI shows
+   * live output). Results keep blueprint order; a question that fails to
+   * generate/parse is dropped rather than failing the batch.
    */
   async generateQuestions(
     topic: string,
     level: string,
-    _blueprints: QuestionBlueprint[],
-    onProgress: (completed: number, partialText: string) => void,
-    signal?: AbortSignal
+    blueprints: QuestionBlueprint[],
+    onProgress: (completed: number) => void,
+    signal?: AbortSignal,
+    onStream?: (text: string) => void
   ): Promise<MCQQuestion[]> {
     if (!this.session) throw new Error('QuestionGeneratorAgent not initialised');
 
-    const prompt = buildMockTestPrompt(topic, level);
+    const results: Array<MCQQuestion | null> = new Array(blueprints.length).fill(null);
+    let completed = 0;
+    let next = 0;
 
-    let fullText = '';
-    const onChunk = (text: string) => {
-      fullText = text;
-      // Count actual question objects by looking for "question": occurrences
-      const questionsDetected = (text.match(/"question"\s*:/g) ?? []).length;
-      onProgress(questionsDetected, text);
+    const worker = async (): Promise<void> => {
+      while (true) {
+        const i = next++;
+        if (i >= blueprints.length) return;
+        try {
+          results[i] = await this.generateOneQuestion(topic, level, blueprints[i], signal, onStream);
+        } catch {
+          results[i] = null;
+        }
+        completed += 1;
+        onProgress(completed);
+      }
     };
 
+    const poolSize = Math.min(GEN_CONCURRENCY, blueprints.length);
+    await Promise.all(Array.from({ length: poolSize }, () => worker()));
+
+    return results.filter((q): q is MCQQuestion => q !== null);
+  }
+
+  /**
+   * Generate a single question for one blueprint entry on an isolated cloned session.
+   * Guarded against runaway/looping output: the stream is aborted if it exceeds
+   * RUNAWAY_CHAR_LIMIT or PER_QUESTION_TIMEOUT_MS, in which case this resolves to
+   * null (a dropped question) rather than hanging the whole batch.
+   */
+  async generateOneQuestion(
+    topic: string,
+    level: string,
+    blueprint: QuestionBlueprint,
+    signal?: AbortSignal,
+    onStream?: (text: string) => void
+  ): Promise<MCQQuestion | null> {
+    if (!this.session) throw new Error('QuestionGeneratorAgent not initialised');
     const clone: LanguageModelSession = await this.session.clone();
+
+    // Per-question abort controller chained to the batch signal + timeout + length guard.
+    const ctrl = new AbortController();
+    const onParentAbort = () => ctrl.abort();
+    if (signal) {
+      if (signal.aborted) ctrl.abort();
+      else signal.addEventListener('abort', onParentAbort, { once: true });
+    }
+    const timer = setTimeout(() => ctrl.abort(), PER_QUESTION_TIMEOUT_MS);
+
+    let guardTripped = false;
+    const onChunk = (text: string) => {
+      onStream?.(text);
+      if (!guardTripped && text.length > RUNAWAY_CHAR_LIMIT) {
+        guardTripped = true;
+        ctrl.abort();   // looping output — stop early
+      }
+    };
+
     try {
-      await streamResponse(
+      const raw = await streamResponse(
         clone,
-        prompt,
+        buildSingleQuestionPrompt(topic, level, blueprint),
         onChunk,
-        signal,
-        MCQQuestionJsonSchema as Record<string, unknown>
+        ctrl.signal,
+        SingleMCQQuestionJsonSchema as Record<string, unknown>
       );
-      return parseQuestions(fullText);
+      return parseSingleQuestion(raw, blueprint);
+    } catch (err: unknown) {
+      // Timeout / runaway / parent cancel all land here — drop this question.
+      if ((err as Error).name === 'AbortError') return null;
+      throw err;
     } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onParentAbort);
       clone.destroy?.();
     }
   }
@@ -56,130 +126,94 @@ export class QuestionGeneratorAgent extends BaseAgent {
 
 // ── Prompt ────────────────────────────────────────────────────────────────────
 
-function buildMockTestPrompt(topicLabel: string, level: string): string {
-  const dist = pickDistribution(level);
-  const total = Object.values(dist).reduce((a, b) => a + b, 0);
+function buildSingleQuestionPrompt(
+  topicLabel: string,
+  level: string,
+  bp: QuestionBlueprint
+): string {
+  const typeRules = TYPE_RULES[bp.questionType];
 
-  const sections: string[] = [];
+  const answerRule = bp.answerMode === 'multiple'
+    ? '- "answerMode": "multiple" — exactly 2 or 3 options are correct. "correct" is an array of those indices, e.g. [0, 2]. End the question text with "(Select all that apply)".'
+    : '- "answerMode": "single" — exactly ONE option is correct. "correct" is a single integer index, e.g. 2.';
 
-  if (dist.conceptual > 0) {
-    sections.push(`${dist.conceptual} CONCEPTUAL questions:
-  - "questionType": "conceptual"
-  - "answerMode": "single" or "multiple" (mix both)
-  - Options are plain text or short math expressions
-  - Each option: {"content": "...", "optionType": "text"} or {"content": "$expr$", "optionType": "math"}`);
-  }
+  return `Write ONE ${bp.questionType} multiple-choice question about "${topicLabel}" for a ${level}-level student.
 
-  if (dist.math > 0) {
-    sections.push(`${dist.math} MATH questions:
-  - "questionType": "math"
-  - "answerMode": "single" or "multiple"
-  - Question MUST contain LaTeX: $\\sum$, $\\frac{a}{b}$, $\\nabla$, $O(n^2)$, etc.
-  - Options are math expressions: {"content": "$O(n^2)$", "optionType": "math"}
-  - Include "diagram" field with ASCII visualization when helpful`);
-  }
+Subtopic: ${bp.subtopic}
+Brief: ${bp.context || `Test understanding of ${bp.subtopic}.`}
 
-  if (dist.programming > 0) {
-    sections.push(`${dist.programming} PROGRAMMING questions:
-  - "questionType": "programming"
-  - "answerMode": "single" or "multiple"
-  - Include "code" field with a Python/R snippet
-  - Options can be code snippets: {"content": "print(x)", "optionType": "code"} or plain text
-  - Include "diagram" field with ASCII flow when relevant`);
-  }
+${typeRules}
 
-  if (dist['case-study'] > 0) {
-    sections.push(`${dist['case-study']} CASE STUDY questions:
-  - "questionType": "case-study"
-  - "answerMode": "single" or "multiple"
-  - Include "context" field with a real-world scenario (3-5 sentences)
-  - Options are scenario-based: {"content": "Use approach X because...", "optionType": "case-study"}
-  - Include "diagram" field with ASCII architecture when helpful`);
-  }
+Universal rules:
+- Exactly 4 options. Every option MUST be distinct, complete, and plausible.
+- NEVER use placeholder or filler options such as "print(x)", "TODO", "None of the above", "All of the above", or repeated/near-identical options.
+- Exactly one set of correct answer(s); the wrong options must be genuinely incorrect but believable.
+${answerRule}
+- Wrap ALL math in delimiters: $...$ for inline, $$...$$ for block. LaTeX must be valid KaTeX: every \\frac needs TWO brace groups \\frac{a}{b}; wrap words in \\text{...}; never write a command immediately followed by letters.
 
-  return `Generate exactly ${total} diverse questions about "${topicLabel}" for ${level} level.
+Output ONLY a single raw JSON object — no markdown, no code fences, no explanation. Start with { and end with }.
 
-IMPORTANT: Output ONLY a raw JSON array. No markdown, no code fences, no backticks, no explanation.
-Start your response with [ and end with ]
-
-Question types needed:
-${sections.join('\n\n')}
-
-JSON format (each question):
+Format:
 {
-  "questionType": "conceptual"|"math"|"programming"|"case-study",
-  "answerMode": "single"|"multiple",
+  "questionType": "${bp.questionType}",
+  "answerMode": "${bp.answerMode}",
   "question": "Question text with optional $LaTeX$",
-  "options": [
-    {"content": "Option text or $equation$ or code", "optionType": "text"|"math"|"code"|"case-study"},
-    ...
-  ],
-  "correct": 0,
-  "code": "...",
-  "context": "...",
-  "diagram": "..."
+  "options": [ {"content": "...", "optionType": "text"|"math"|"code"|"case-study"}, ... 4 items ],
+  "correct": ${bp.answerMode === 'multiple' ? '[0, 2]' : '0'}${bp.questionType === 'programming' ? ',\n  "code": "optional shared snippet — OMIT for \\"which snippet is correct\\" questions"' : ''}${bp.questionType === 'case-study' ? ',\n  "context": "3-5 sentence real-world scenario"' : ''}
+}`;
 }
 
-Rules:
-- options: 4 items, each is an object {content, optionType}
-- For "multiple" answerMode, correct is an array e.g. [0, 2]
-- For "multiple" answerMode, add "(Select all that apply)" hint at end of question
-- Make questions varied and appropriate for ${level} level
-- Output exactly ${total} objects
-- Start response with [ character immediately`;
-}
+const TYPE_RULES: Record<QuestionBlueprint['questionType'], string> = {
+  conceptual:
+    `Type rules (conceptual):
+- Options are plain text or short math expressions ("text" or "math" optionType).
+- Do NOT include a "code" or "context" field.`,
+  math:
+    `Type rules (math):
+- The question MUST contain LaTeX (e.g. $\\frac{a}{b}$, $\\sum_{i=1}^{n} x_i$, $O(n^2)$).
+- Options are math expressions with optionType "math". Make them numerically/algebraically distinct.
+- Do NOT include a "code" or "context" field.`,
+  programming:
+    `Type rules (programming):
+- For "which snippet is correct" questions: put each candidate snippet as an option with optionType "code", and OMIT the top-level "code" field. Do NOT add a separate placeholder code block.
+- For "what does this code do / output" questions: put the shared snippet in the "code" field, and make the options plain "text".
+- EVERY code option must be syntactically valid and runnable. The correct one must actually produce the right result; wrong ones must be plausible but incorrect (wrong API/shape/argument, off-by-one, etc.).`,
+  'case-study':
+    `Type rules (case-study):
+- Include a "context" field with a 3-5 sentence real-world scenario.
+- Options describe approaches/decisions with optionType "case-study".`,
+};
 
-// ── JSON parser ───────────────────────────────────────────────────────────────
+// ── JSON parsing ────────────────────────────────────────────────────────────────
 
 /**
  * The AI sometimes outputs LaTeX like \frac bare inside JSON strings (without escaping
  * the backslash). JSON.parse treats \f as form-feed, \b as backspace, \n as newline —
  * corrupting LaTeX commands. Fix: double-escape any unescaped \X where X is a JSON
  * control-char letter followed by more letters (a LaTeX command, not a real escape).
- * Uses negative lookbehind to avoid corrupting already-correct \\frac sequences.
  */
 function fixLatexBackslashes(text: string): string {
   return text.replace(/(?<!\\)\\([bfnrt])(?=[a-zA-Z])/g, '\\\\$1');
 }
 
-function parseQuestions(raw: string): MCQQuestion[] {
+function parseSingleQuestion(raw: string, bp: QuestionBlueprint): MCQQuestion | null {
   const cleaned = raw.trim().replace(/```(?:json)?\s*/gi, '').replace(/```\s*/g, '').trim();
+  const text = fixLatexBackslashes(cleaned);
 
-  let text = fixLatexBackslashes(cleaned);
-  const start = text.indexOf('[');
-  const end = text.lastIndexOf(']');
-  if (start !== -1 && end !== -1 && end > start) text = text.slice(start, end + 1);
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) return null;
 
+  let obj: unknown;
   try {
-    const parsed: unknown = JSON.parse(text);
-    if (Array.isArray(parsed)) {
-      return (parsed as Array<Record<string, unknown>>).filter(isValidQuestion).map(toMCQ);
-    }
+    obj = JSON.parse(text.slice(start, end + 1));
   } catch {
-    // fall through to brace extractor
+    return null;
   }
+  if (Array.isArray(obj)) obj = obj[0];
+  if (!isValidQuestion(obj)) return null;
 
-  // Brace-counting fallback for streamed partial JSON
-  const questions: MCQQuestion[] = [];
-  let depth = 0;
-  let objStart = -1;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (ch === '{') {
-      if (depth === 0) objStart = i;
-      depth++;
-    } else if (ch === '}') {
-      depth--;
-      if (depth === 0 && objStart !== -1) {
-        try {
-          const obj = JSON.parse(fixLatexBackslashes(text.slice(objStart, i + 1))) as Record<string, unknown>;
-          if (isValidQuestion(obj)) questions.push(toMCQ(obj));
-        } catch { /* skip */ }
-        objStart = -1;
-      }
-    }
-  }
-  return questions;
+  return toMCQ(obj as Record<string, unknown>, bp);
 }
 
 function isValidQuestion(obj: unknown): boolean {
@@ -211,12 +245,12 @@ function isValidQuestion(obj: unknown): boolean {
 
 let _idCounter = 1;
 
-function toMCQ(obj: Record<string, unknown>): MCQQuestion {
+function toMCQ(obj: Record<string, unknown>, bp: QuestionBlueprint): MCQQuestion {
   const validContentTypes = ['conceptual', 'math', 'programming', 'case-study'] as const;
   const rawQType = obj.questionType as string;
   const questionType = validContentTypes.includes(rawQType as typeof validContentTypes[number])
     ? (rawQType as MCQQuestion['questionType'])
-    : 'conceptual';
+    : bp.questionType;
 
   const answerMode: MCQQuestion['answerMode'] =
     (obj.answerMode as string) === 'multiple' ? 'multiple' : 'single';

@@ -1,7 +1,7 @@
 // ── Experience levels ─────────────────────────────────────────────────────────
 
 export const EXPERIENCE_LEVELS = [
-  { id: 'beginner',     label: 'Beginner',     icon: 'Sprout', description: 'No prior knowledge — building fundamentals' },
+  { id: 'beginner',     label: 'Beginner',     icon: 'Sprout', description: 'No prior knowledge — building basics' },
   { id: 'intermediate', label: 'Intermediate', icon: 'Flame',  description: 'Familiar with basics — applied concepts' },
   { id: 'advanced',     label: 'Advanced',     icon: 'Rocket', description: 'Strong foundation — in-depth theory' },
   { id: 'expert',       label: 'Expert',       icon: 'Crown',  description: 'Research-level — edge cases & nuances' },
@@ -43,6 +43,7 @@ export interface LevelConfig {
   duration: number;
   durationLabel: string;
   total: number;
+  multipleChoice: number;   // exact number of multiple-answer questions for this level
   distribution: LevelDistribution;
 }
 
@@ -51,27 +52,38 @@ export const LEVEL_CONFIG: Record<string, LevelConfig> = {
     duration: 7 * 60,
     durationLabel: '7 min',
     total: 10,
+    multipleChoice: 2,
     distribution: { conceptual: [7, 10], math: [0, 0], programming: [0, 0], caseStudy: [0, 0] },
   },
   intermediate: {
     duration: 15 * 60,
     durationLabel: '15 min',
     total: 15,
+    multipleChoice: 4,
     distribution: { conceptual: [5, 8], math: [2, 4], programming: [3, 6], caseStudy: [0, 0] },
   },
   advanced: {
     duration: 20 * 60,
     durationLabel: '20 min',
     total: 18,
+    multipleChoice: 5,
     distribution: { conceptual: [4, 6], math: [3, 5], programming: [4, 6], caseStudy: [2, 3] },
   },
   expert: {
     duration: 20 * 60,
     durationLabel: '20 min',
     total: 20,
+    multipleChoice: 6,
     distribution: { conceptual: [3, 4], math: [4, 6], programming: [5, 7], caseStudy: [3, 5] },
   },
 };
+
+/** Resolve the single/multiple answer-mode split for a level. */
+export function getAnswerSplit(level: string): { total: number; multiple: number; single: number } {
+  const config = LEVEL_CONFIG[level] ?? LEVEL_CONFIG.intermediate;
+  const multiple = Math.min(config.multipleChoice, config.total);
+  return { total: config.total, multiple, single: config.total - multiple };
+}
 
 /** Pick question counts per content type that sum to the level total */
 export function pickDistribution(level: string): Record<QuestionContentType, number> {

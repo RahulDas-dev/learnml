@@ -208,7 +208,7 @@ export function ExplainProvider({ children }: { children: ReactNode }) {
 
 Student's question: ${msg}
 
-Provide a clear, helpful response. Use **bold** for key terms, math equations with $...$ notation, and ASCII diagrams if helpful. Be concise but thorough.`;
+Provide a clear, helpful response. Use **bold** for key terms and ASCII diagrams if helpful. Wrap ALL math in delimiters: $...$ for inline, $$...$$ for block — never write bare LaTeX commands (\\frac, \\sum, \\nabla, ...) outside $. Be concise but thorough.`;
 
     try {
       let assistantMsg = '';

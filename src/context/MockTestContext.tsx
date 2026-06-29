@@ -3,8 +3,10 @@ import type { ReactNode } from 'react';
 import { useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom';
 import { LEVEL_CONFIG } from '@/lib/config';
 import type { MCQQuestion } from '@/lib/config';
-import { QuestionGeneratorAgent, ExplainerAgent } from '@/agents';
+import { PlannerAgent, QuestionGeneratorAgent, ExplainerAgent } from '@/agents';
 import type { AIStatus } from '@/agents';
+
+export type GenStage = 'planning' | 'generating';
 
 export type AnswerValue = number | number[] | null;
 
@@ -13,7 +15,7 @@ export type AnswerValue = number | number[] | null;
 const setupKey = (id: string) => `ds_mocktest_setup_${id}`;
 const stateKey = (id: string) => `ds_mocktest_state_${id}`;
 
-interface SetupData { topic: string; level: string; }
+interface SetupData { topic: string; level: string; overlappedTopic?: string; }
 
 interface SavedState {
   questions: MCQQuestion[];
@@ -55,6 +57,8 @@ export interface MockTestContextValue {
   level: string;
   totalQuestions: number;
   testDuration: number;
+  genStage: GenStage;
+  generatedCount: number;
   rawStream: string;
   questions: MCQQuestion[];
   currentQ: number;
@@ -96,6 +100,7 @@ export function MockTestProvider({ children }: { children: ReactNode }) {
   const setup = id ? loadSetup(id) : null;
   const topic = setup?.topic ?? '';
   const level = setup?.level ?? '';
+  const overlappedTopic = setup?.overlappedTopic ?? '';
 
   const config = LEVEL_CONFIG[level] ?? LEVEL_CONFIG.intermediate;
   const totalQuestions = config.total;
@@ -114,32 +119,39 @@ export function MockTestProvider({ children }: { children: ReactNode }) {
 
   const [aiStatus, setAiStatus] = useState<AIStatus>('checking');
 
+  const plannerRef = useRef<PlannerAgent | null>(null);
   const qGenRef = useRef<QuestionGeneratorAgent | null>(null);
   const explainerRef = useRef<ExplainerAgent | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
+    const planner = new PlannerAgent();
     const qGen = new QuestionGeneratorAgent();
     const explainer = new ExplainerAgent();
+    plannerRef.current = planner;
     qGenRef.current = qGen;
     explainerRef.current = explainer;
 
     Promise.all([
-      qGen.init({ temperature: 1.5, topK: 40 }),
+      planner.init({ temperature: 0.7, topK: 40 }),
+      qGen.init({ temperature: 0.9, topK: 40 }),
       explainer.init({ temperature: 0.8, topK: 40 }),
     ]).then(() => {
-      if (!cancelled && qGen.isReady && explainer.isReady) setAiStatus('ready');
+      if (!cancelled && planner.isReady && qGen.isReady && explainer.isReady) setAiStatus('ready');
     });
 
     return () => {
       cancelled = true;
+      planner.destroy();
       qGen.destroy();
       explainer.destroy();
       setAiStatus('checking');
     };
   }, []);
 
+  const [genStage, setGenStage] = useState<GenStage>('planning');
+  const [generatedCount, setGeneratedCount] = useState(0);
   const [rawStream, setRawStream] = useState('');
   const [questions, setQuestions] = useState<MCQQuestion[]>(restored?.questions ?? []);
   const [currentQ, setCurrentQ] = useState(restored?.currentQ ?? 0);
@@ -204,10 +216,24 @@ export function MockTestProvider({ children }: { children: ReactNode }) {
 
     const run = async () => {
       try {
-        const generated = await qGenRef.current!.generateQuestions(
-          topic, level, [],
-          (_n, text) => { setRawStream(text); },
+        // 1. Plan: decide subtopic / type / answer-mode / context brief for every question
+        setGenStage('planning');
+        setGeneratedCount(0);
+        setRawStream('');
+        const blueprint = await plannerRef.current!.planQuestions(
+          topic, level, overlappedTopic,
+          (text) => { setRawStream(text); },
           signal
+        );
+
+        // 2. Generate: one model call per blueprint entry, fired in parallel
+        setGenStage('generating');
+        setRawStream('');
+        const generated = await qGenRef.current!.generateQuestions(
+          topic, level, blueprint,
+          (n) => { setGeneratedCount(n); },
+          signal,
+          (text) => { setRawStream(text); }
         );
 
         if (!generated || generated.length === 0) {
@@ -239,7 +265,7 @@ export function MockTestProvider({ children }: { children: ReactNode }) {
       ctrl.abort();
       generationStarted.current = false;
     };
-  }, [aiStatus, topic, level, navigate, testDuration, id]);
+  }, [aiStatus, topic, level, overlappedTopic, navigate, testDuration, id]);
 
   // Timer — active only on quiz route
   useEffect(() => {
@@ -368,6 +394,8 @@ export function MockTestProvider({ children }: { children: ReactNode }) {
     level,
     totalQuestions,
     testDuration,
+    genStage,
+    generatedCount,
     rawStream,
     questions,
     currentQ,

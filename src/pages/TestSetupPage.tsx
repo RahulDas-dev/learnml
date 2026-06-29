@@ -64,16 +64,20 @@ export default function TestSetupPage() {
 
     try {
       abortRef.current = new AbortController();
-      const isValid = await agentRef.current.validateTopic(topic, abortRef.current.signal);
+      const result = await agentRef.current.validateTopic(topic, abortRef.current.signal);
 
-      if (!isValid) {
-        setTopicError(`"${topic}" doesn't appear to be a Data Science related topic. Try topics like Machine Learning, Statistics, Deep Learning, NLP, etc.`);
+      if (!result.isValidTopic) {
+        setTopicError(result.validationError ?? `"${topic}" doesn't appear to be a Data Science related topic. Try topics like Machine Learning, Statistics, Deep Learning, NLP, etc.`);
         setStage('setup');
         return;
       }
 
       const id = crypto.randomUUID();
-      sessionStorage.setItem(`ds_mocktest_setup_${id}`, JSON.stringify({ topic, level: selectedLevel }));
+      sessionStorage.setItem(`ds_mocktest_setup_${id}`, JSON.stringify({
+        topic: result.topic || topic,          // use the canonical rephrasing
+        level: selectedLevel,
+        overlappedTopic: result.overlappedTopic,
+      }));
       navigate(`/mock-test/${id}/generating`);
     } catch (err: unknown) {
       if ((err as Error).name === 'AbortError') { setStage('setup'); return; }
@@ -151,6 +155,7 @@ export default function TestSetupPage() {
                       <li key={i}>{part}</li>
                     ))}
                   </ul>
+                  <br />
                   {config && (
                     <p className={`text-[10px] mono text-right ${selectedLevel === lvl.id ? 'text-background/50' : 'text-muted-foreground/70'}`}>
                       {config.total} Qs · {config.durationLabel}

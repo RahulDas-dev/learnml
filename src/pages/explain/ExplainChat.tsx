@@ -4,7 +4,7 @@ import { renderSlideMarkdown } from '@/lib/markdownRenderer';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, FlaskConical, Send } from 'lucide-react';
+import { ArrowLeft, FlaskConical, Home, Send } from 'lucide-react';
 import { useExplain } from '@/hooks/useExplain';
 
 export function ExplainChat() {
@@ -40,6 +40,9 @@ export function ExplainChat() {
               className="px-3 py-1.5 text-xs"
             >
               <FlaskConical size={13} /> Take Test
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => navigate('/')} title="Home" aria-label="Home">
+              <Home size={16} strokeWidth={1.75} />
             </Button>
             <ThemeToggle />
           </div>

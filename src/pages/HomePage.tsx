@@ -29,7 +29,7 @@ export default function HomePage() {
         </div>
       </nav>
 
-      <div className="max-w-4xl mx-auto px-6 py-20">
+      <div className="max-w-4xl mx-auto px-6 py-10">
         {/* Hero */}
         <div className="mb-16 fade-in">
           <Badge variant="outline" className="gap-2 px-3 py-1 rounded-full bg-secondary mb-6 font-normal">
@@ -37,7 +37,7 @@ export default function HomePage() {
             <span className="text-xs mono text-muted-foreground tracking-wide">Powered by Chrome Built-in AI</span>
           </Badge>
 
-          <h1 className="text-5xl sm:text-6xl font-bold text-foreground mb-5 leading-tight tracking-tight">
+          <h1 className="text-4xl sm:text-5xl font-bold text-foreground mb-5 leading-tight tracking-tight">
             Master<br />Data Science
           </h1>
           <p className="text-lg text-muted-foreground max-w-lg leading-relaxed">
@@ -58,8 +58,8 @@ export default function HomePage() {
               </IconBox>
               <h2 className="text-xl font-bold text-foreground">Mock Test</h2>
             </div>
-            <p className="text-muted-foreground text-sm leading-relaxed mb-6">
-              10 questions, 10-minute timer. Type any Data Science topic, choose your experience level — AI generates a fresh test every time.
+            <p className="text-muted-foreground text-sm font-mono leading-relaxed mb-6">
+              Type any Data Science topic, choose your experience level — AI generates a fresh test every time.
             </p>
             <div className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground">
               Start Test
@@ -78,8 +78,8 @@ export default function HomePage() {
               </IconBox>
               <h2 className="text-xl font-bold text-foreground">Explain Topic</h2>
             </div>
-            <p className="text-muted-foreground text-sm leading-relaxed mb-6">
-              Get a comprehensive, structured explanation of any Data Science topic — concepts, algorithms, applications and key takeaways.
+            <p className="text-muted-foreground text-sm font-mono leading-relaxed mb-6">
+              Get a comprehensive, structured explanation of any Data Science topic.
             </p>
             <div className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground">
               Explore Topics

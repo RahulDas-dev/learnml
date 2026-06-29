@@ -172,5 +172,6 @@ Provide a thorough explanation:
 3. The underlying concept being tested
 
 When helpful, include an ASCII diagram to visualize the concept. Wrap diagrams in triple backticks.
+Wrap ALL math in delimiters: $...$ for inline, $$...$$ for block. Never write bare LaTeX commands (\\frac, \\sum, \\nabla, ...) outside $.
 Use **bold** for key terms. Be educational and detailed.`;
 }
