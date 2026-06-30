@@ -6,9 +6,10 @@ import type { MCQQuestion, OptionContentType } from '@/lib/config';
 import { SingleMCQQuestionJsonSchema } from './schemas';
 import type { QuestionBlueprint } from './schemas';
 
-// Max in-flight per-question generation calls. On-device Gemini Nano degrades if
-// hit with 15-20 simultaneous prompt() calls, so we bound concurrency.
-const GEN_CONCURRENCY = 4;
+// How many times to attempt each question. On-device Gemini Nano occasionally
+// errors or falls into a repetition loop (aborted by the guards below); a couple
+// of retries — helped by temperature randomness — recover most dropped slots.
+const MAX_ATTEMPTS_PER_QUESTION = 3;
 
 // Hard ceiling on how long a single question may stream before we abort it.
 // Gemini Nano sometimes falls into a repetition loop (e.g. "\boldsymbol{\boldsymbol{…")
@@ -29,11 +30,13 @@ export class QuestionGeneratorAgent extends BaseAgent {
 
   /**
    * Generate every question from the planner's blueprint — one model call per
-   * question, run through a bounded worker pool (at most GEN_CONCURRENCY in flight).
-   * `onProgress` reports how many have finished. `onStream` receives the latest
-   * streamed tokens from whichever question is currently writing (so the UI shows
-   * live output). Results keep blueprint order; a question that fails to
-   * generate/parse is dropped rather than failing the batch.
+   * question, **sequentially**. Gemini Nano is a single on-device model and cannot
+   * reliably serve concurrent prompts (parallel calls mostly error/time out), so we
+   * run one at a time and retry any dropped slot up to MAX_ATTEMPTS_PER_QUESTION.
+   *
+   * `onProgress` reports the number of questions **successfully** produced so far
+   * (not attempts), so the UI counter never overstates. `onStream` receives the
+   * latest streamed tokens for live output. Results keep blueprint order.
    */
   async generateQuestions(
     topic: string,
@@ -46,25 +49,26 @@ export class QuestionGeneratorAgent extends BaseAgent {
     if (!this.session) throw new Error('QuestionGeneratorAgent not initialised');
 
     const results: Array<MCQQuestion | null> = new Array(blueprints.length).fill(null);
-    let completed = 0;
-    let next = 0;
+    let succeeded = 0;
 
-    const worker = async (): Promise<void> => {
-      while (true) {
-        const i = next++;
-        if (i >= blueprints.length) return;
-        try {
-          results[i] = await this.generateOneQuestion(topic, level, blueprints[i], signal, onStream);
-        } catch {
-          results[i] = null;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS_PER_QUESTION; attempt++) {
+      if (signal?.aborted) break;
+      // Pass over every still-unfilled slot.
+      for (let i = 0; i < blueprints.length; i++) {
+        if (signal?.aborted) break;
+        if (results[i]) continue;
+
+        const q = await this.generateOneQuestion(topic, level, blueprints[i], signal, onStream)
+          .catch(() => null);
+
+        if (q) {
+          results[i] = q;
+          succeeded += 1;
+          onProgress(succeeded);
         }
-        completed += 1;
-        onProgress(completed);
       }
-    };
-
-    const poolSize = Math.min(GEN_CONCURRENCY, blueprints.length);
-    await Promise.all(Array.from({ length: poolSize }, () => worker()));
+      if (results.every((r) => r !== null)) break; // all slots filled — done early
+    }
 
     return results.filter((q): q is MCQQuestion => q !== null);
   }
