@@ -127,7 +127,7 @@ Three specialized agents share two Chrome AI sessions:
 │                 (window.LanguageModel API)                    │
 ├─────────────────────────────┬────────────────────────────────┤
 │       Quiz Session          │      Explanation Session        │
-│   temp=1.5  topK=40         │    temp=0.8  topK=40           │
+│   temp=0.9  topK=40         │    temp=0.8  topK=40           │
 │   "Output only valid JSON"  │    "World-class DS educator"   │
 │                             │                                │
 │   PlannerAgent              │   ExplainerAgent               │
@@ -292,7 +292,7 @@ State is cleared on **Try Again** or **Explain Topic**. It is NOT cleared on pag
 
 1. **Chrome 138+ required** — Chrome's `window.LanguageModel` Prompt API is a Chrome-only feature behind a flag.
 2. **Gemini Nano limitations** — The on-device model has a limited context window. For 25-question (Expert) quizzes, the parser uses a brace-counting fallback to extract partial results if JSON is truncated.
-3. **Single-file build** — Production output is one `dist/index.html` (~700 KB). Enables offline use and easy sharing; no code splitting.
+3. **Code-split build** — Production output is a small `dist/index.html` plus hashed, cacheable JS/CSS/font chunks; heavy routes (quiz, explain, KaTeX) are lazy-loaded for a fast initial load on GitHub Pages.
 4. **Multi-select scoring** — All-or-nothing; partial selection scores zero.
 5. **Explanation caching** — Each explanation is generated once per results session and cached in a `useRef`. Navigating away does not clear the cache (it lives in the context).
 6. **Tab-switch count** — Tracks `document.visibilitychange` events during the quiz only. Uses `useRef` to avoid Strict Mode double-counting.
@@ -309,8 +309,20 @@ pnpm dlx shadcn@latest add <component-name>
 ### Adding a New Question Type
 1. Add to `MCQQuestion['questionType']` in `src/lib/config.ts`
 2. Add distribution range to each level in `LEVEL_CONFIG`
-3. Update `buildMockTestPrompt()` in `QuestionGeneratorAgent.ts`
+3. Update the planner blueprint prompt (`buildQuestionPlanPrompt` in `PlannerAgent.ts`) and the per-question prompt (`buildSingleQuestionPrompt` in `QuestionGeneratorAgent.ts`)
 4. Add rendering in `TestQuiz.tsx`
+
+---
+
+## Spread the Word (Distribution Checklist)
+
+The app is SEO-ready (meta tags, Open Graph/Twitter cards, JSON-LD, `robots.txt`, `sitemap.xml`, PWA manifest). To grow reach:
+
+- **GitHub repo** — add topics (`gemini-nano`, `chrome-ai`, `on-device-ai`, `data-science`, `mock-test`, `react`), a one-line description, and a social preview image (Settings → Social preview).
+- **Google Chrome Built-in AI gallery** — submit the app; it's a strong fit for on-device AI showcases.
+- **Launch posts** — Product Hunt, "Show HN", r/datascience and r/learnmachinelearning, plus a dev.to/Medium build write-up for backlinks.
+- **Analytics** — enable the commented privacy-friendly GoatCounter snippet in `index.html` (free, no cookies) to measure traffic and referrers.
+- **Validate** — run the deployed URL through Lighthouse, the Google Rich Results Test, and a social-card validator (opengraph.xyz / X Card Validator) after each deploy.
 
 ---
 

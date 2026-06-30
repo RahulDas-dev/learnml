@@ -21,7 +21,10 @@ import {
   ChevronRight,
   ArrowLeft,
   Home,
+  Share2,
 } from 'lucide-react';
+
+const SITE_URL = 'https://rahuldas-dev.github.io/learnml/';
 
 function isCorrectAnswer(answer: AnswerValue, correct: number | number[]): boolean {
   if (answer === null) return false;
@@ -90,6 +93,18 @@ export function TestResults() {
   const incorrect = questions.length - score - answers.filter((a) => a === null).length;
   const skipped = answers.filter((a) => a === null).length;
   const completedBeforeTime = elapsedTime > 0 && elapsedTime < testDuration;
+
+  const handleShare = async () => {
+    const text = `I scored ${pct}% on a ${level} "${topic}" mock test on DS Learn — free on-device AI Data Science practice.`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'DS Learn', text, url: SITE_URL });
+        return;
+      } catch { /* user cancelled — fall through to X intent */ }
+    }
+    const intent = `https://twitter.com/intent/tweet?text=${encodeURIComponent(`${text} ${SITE_URL}`)}`;
+    window.open(intent, '_blank', 'noopener,noreferrer');
+  };
 
   const circumference = 2 * Math.PI * 52;
   const total = questions.length;
@@ -331,14 +346,17 @@ export function TestResults() {
         </div>
 
         {/* ── Actions ── */}
-        <div className="flex gap-3 fade-in-2">
-          <Button variant="outline" onClick={onTryAgain} className="flex-1 py-3 text-sm">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 fade-in-2">
+          <Button variant="outline" onClick={onTryAgain} className="py-3 text-sm">
             <RotateCcw size={14} /> Try Again
           </Button>
-          <Button variant="outline" onClick={handleDownload} className="flex-1 py-3 text-sm">
+          <Button variant="outline" onClick={handleShare} className="py-3 text-sm">
+            <Share2 size={14} /> Share
+          </Button>
+          <Button variant="outline" onClick={handleDownload} className="py-3 text-sm">
             <Download size={14} /> Download
           </Button>
-          <Button onClick={onExplainTopic} className="flex-1 py-3 text-sm">
+          <Button onClick={onExplainTopic} className="py-3 text-sm">
             <BookOpen size={14} /> Explain Topic
           </Button>
         </div>
