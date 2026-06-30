@@ -5,17 +5,18 @@ import { Button } from '@/components/ui/button';
 import { useMockTest } from '@/hooks/useMockTest';
 
 export function TestGenerating() {
-  const { topic, level, genStage, generatedCount, rawStream, totalQuestions, onCancel } = useMockTest();
+  const { topic, level, genStage, generatedCount, planTokens, genTokens, rawStream, totalQuestions, onCancel } = useMockTest();
 
   const planning = genStage === 'planning';
   const questionsDetected = generatedCount;
   const allDone = !planning && questionsDetected >= totalQuestions;
   const genProgress = planning ? 4 : Math.min(Math.round((questionsDetected / totalQuestions) * 100), 99);
+  const fmtTokens = (n: number) => (n > 0 ? `${n.toLocaleString()} tokens` : undefined);
   const steps = [
-    { label: 'Topic validated', done: true },
-    { label: 'Planning questions', done: !planning },
-    { label: 'Generating questions', done: allDone },
-    { label: 'Finalizing test', done: allDone },
+    { label: 'Topic validated', done: true, tokens: undefined as string | undefined },
+    { label: 'Planning questions', done: !planning, tokens: fmtTokens(planTokens) },
+    { label: 'Generating questions', done: allDone, tokens: fmtTokens(genTokens) },
+    { label: 'Finalizing test', done: allDone, tokens: undefined as string | undefined },
   ];
 
   return (
@@ -93,9 +94,11 @@ export function TestGenerating() {
                   }`}>
                     {step.label}
                   </span>
-                  {!step.done && i === steps.findIndex(s => !s.done) && (
+                  {step.tokens ? (
+                    <span className="text-xs text-muted-foreground mono ml-auto tabular-nums">{step.tokens}</span>
+                  ) : !step.done && i === steps.findIndex(s => !s.done) ? (
                     <span className="text-xs text-muted-foreground mono animate-pulse ml-auto">in progress…</span>
-                  )}
+                  ) : null}
                 </div>
               ))}
             </div>

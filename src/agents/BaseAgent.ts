@@ -14,6 +14,9 @@ export abstract class BaseAgent {
   protected abstract readonly systemPrompt: string;
   private _status: AIStatus = 'checking';
 
+  /** Tokens consumed by the most recent clone operation (0 if not exposed). */
+  lastTokens = 0;
+
   async init(options?: AgentInitOptions): Promise<AIInitResult> {
     const result = await initLanguageModel(
       this.systemPrompt,

@@ -1,6 +1,6 @@
 import { BaseAgent } from './BaseAgent';
 import type { AgentInitOptions } from './BaseAgent';
-import { getFullResponse, streamResponse } from './promptApi';
+import { getFullResponse, streamResponse, sessionTokenUsage } from './promptApi';
 import type { LanguageModelSession } from './promptApi';
 import { pickDistribution, getAnswerSplit } from '@/lib/config';
 import type { SlideOutline, QuestionContentType } from '@/lib/config';
@@ -115,6 +115,7 @@ export class PlannerAgent extends BaseAgent {
           signal,
           QuestionBlueprintJsonSchema as Record<string, unknown>
         );
+        this.lastTokens = sessionTokenUsage(clone);
         const parsed: unknown = JSON.parse(raw);
         if (Array.isArray(parsed)) planned = parsed as Array<Record<string, unknown>>;
       } catch (err: unknown) {

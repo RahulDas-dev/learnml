@@ -57,7 +57,19 @@ export interface LanguageModelSession {
   clone: () => Promise<LanguageModelSession>;
   contextUsage?: number;
   contextWindow?: number;
+  // Token-usage counters vary by Chrome version — read via sessionTokenUsage().
+  inputUsage?: number;
+  tokensSoFar?: number;
   destroy?: () => void;
+}
+
+/**
+ * Tokens consumed by a session so far. The Prompt API has renamed this across
+ * Chrome versions (`inputUsage`, `contextUsage`, `tokensSoFar`), so we probe all
+ * three and fall back to 0 if none is exposed.
+ */
+export function sessionTokenUsage(session: LanguageModelSession): number {
+  return session.inputUsage ?? session.contextUsage ?? session.tokensSoFar ?? 0;
 }
 
 export type AIStatus =

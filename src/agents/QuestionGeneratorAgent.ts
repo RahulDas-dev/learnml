@@ -1,6 +1,6 @@
 import { BaseAgent } from './BaseAgent';
 import type { AgentInitOptions } from './BaseAgent';
-import { streamResponse } from './promptApi';
+import { streamResponse, sessionTokenUsage } from './promptApi';
 import type { LanguageModelSession } from './promptApi';
 import type { MCQQuestion, OptionContentType } from '@/lib/config';
 import { SingleMCQQuestionJsonSchema } from './schemas';
@@ -35,14 +35,15 @@ export class QuestionGeneratorAgent extends BaseAgent {
    * run one at a time and retry any dropped slot up to MAX_ATTEMPTS_PER_QUESTION.
    *
    * `onProgress` reports the number of questions **successfully** produced so far
-   * (not attempts), so the UI counter never overstates. `onStream` receives the
-   * latest streamed tokens for live output. Results keep blueprint order.
+   * (not attempts) plus the running total of tokens consumed, so the UI counter
+   * never overstates. `onStream` receives the latest streamed tokens for live
+   * output. Results keep blueprint order.
    */
   async generateQuestions(
     topic: string,
     level: string,
     blueprints: QuestionBlueprint[],
-    onProgress: (completed: number) => void,
+    onProgress: (completed: number, tokens: number) => void,
     signal?: AbortSignal,
     onStream?: (text: string) => void
   ): Promise<MCQQuestion[]> {
@@ -50,6 +51,7 @@ export class QuestionGeneratorAgent extends BaseAgent {
 
     const results: Array<MCQQuestion | null> = new Array(blueprints.length).fill(null);
     let succeeded = 0;
+    let totalTokens = 0;
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS_PER_QUESTION; attempt++) {
       if (signal?.aborted) break;
@@ -61,11 +63,12 @@ export class QuestionGeneratorAgent extends BaseAgent {
         const q = await this.generateOneQuestion(topic, level, blueprints[i], signal, onStream)
           .catch(() => null);
 
+        totalTokens += this.lastTokens; // count tokens whether the attempt succeeded or not
         if (q) {
           results[i] = q;
           succeeded += 1;
-          onProgress(succeeded);
         }
+        onProgress(succeeded, totalTokens);
       }
       if (results.every((r) => r !== null)) break; // all slots filled — done early
     }
@@ -121,6 +124,7 @@ export class QuestionGeneratorAgent extends BaseAgent {
       if ((err as Error).name === 'AbortError') return null;
       throw err;
     } finally {
+      this.lastTokens = sessionTokenUsage(clone);
       clearTimeout(timer);
       signal?.removeEventListener('abort', onParentAbort);
       clone.destroy?.();

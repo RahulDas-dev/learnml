@@ -59,6 +59,8 @@ export interface MockTestContextValue {
   testDuration: number;
   genStage: GenStage;
   generatedCount: number;
+  planTokens: number;
+  genTokens: number;
   rawStream: string;
   questions: MCQQuestion[];
   currentQ: number;
@@ -152,6 +154,8 @@ export function MockTestProvider({ children }: { children: ReactNode }) {
 
   const [genStage, setGenStage] = useState<GenStage>('planning');
   const [generatedCount, setGeneratedCount] = useState(0);
+  const [planTokens, setPlanTokens] = useState(0);
+  const [genTokens, setGenTokens] = useState(0);
   const [rawStream, setRawStream] = useState('');
   const [questions, setQuestions] = useState<MCQQuestion[]>(restored?.questions ?? []);
   const [currentQ, setCurrentQ] = useState(restored?.currentQ ?? 0);
@@ -219,19 +223,22 @@ export function MockTestProvider({ children }: { children: ReactNode }) {
         // 1. Plan: decide subtopic / type / answer-mode / context brief for every question
         setGenStage('planning');
         setGeneratedCount(0);
+        setPlanTokens(0);
+        setGenTokens(0);
         setRawStream('');
         const blueprint = await plannerRef.current!.planQuestions(
           topic, level, overlappedTopic,
           (text) => { setRawStream(text); },
           signal
         );
+        setPlanTokens(plannerRef.current!.lastTokens);
 
-        // 2. Generate: one model call per blueprint entry, fired in parallel
+        // 2. Generate: one model call per blueprint entry, sequentially
         setGenStage('generating');
         setRawStream('');
         const generated = await qGenRef.current!.generateQuestions(
           topic, level, blueprint,
-          (n) => { setGeneratedCount(n); },
+          (n, tokens) => { setGeneratedCount(n); setGenTokens(tokens); },
           signal,
           (text) => { setRawStream(text); }
         );
@@ -396,6 +403,8 @@ export function MockTestProvider({ children }: { children: ReactNode }) {
     testDuration,
     genStage,
     generatedCount,
+    planTokens,
+    genTokens,
     rawStream,
     questions,
     currentQ,
