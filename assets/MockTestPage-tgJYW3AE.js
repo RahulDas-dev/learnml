@@ -1,1 +1,0 @@
-import{i as e,t}from"./jsx-runtime-CauZbT11.js";import{n}from"./MockTestContext-qIBOK5dP.js";var r=t();function i(){return(0,r.jsx)(n,{children:(0,r.jsx)(e,{})})}export{i as default};

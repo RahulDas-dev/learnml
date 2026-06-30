@@ -1,1 +1,0 @@
-import{f as e,m as t}from"./jsx-runtime-CauZbT11.js";import{t as n}from"./MockTestContext-qIBOK5dP.js";var r=t(e(),1);function i(){let e=(0,r.useContext)(n);if(!e)throw Error(`useMockTest must be used inside MockTestProvider`);return e}export{i as t};
