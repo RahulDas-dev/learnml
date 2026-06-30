@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://rahuldas-dev.github.io/learnml/sitemap.xml
