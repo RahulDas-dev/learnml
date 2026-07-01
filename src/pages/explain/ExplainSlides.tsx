@@ -1,4 +1,5 @@
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { HomeButton } from '@/components/HomeButton';
 import { renderSlideMarkdown } from '@/lib/markdownRenderer';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,7 +9,6 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   ChevronLeft,
   ChevronRight,
-  Home,
   Loader,
   MessageCircle,
 } from 'lucide-react';
@@ -37,9 +37,7 @@ export function ExplainSlides() {
       <nav className="border-b border-border bg-background/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-3xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={onGoHome} title="Home" aria-label="Home" className="group hover:bg-transparent">
-              <Home size={16} strokeWidth={1.75} className="group-hover:fill-current" />
-            </Button>
+            <HomeButton onClick={onGoHome} />
             <span className="font-bold text-sm text-foreground truncate max-w-48" style={{ fontFamily: 'Syne, sans-serif' }}>
               {confirmedTopic}
             </span>

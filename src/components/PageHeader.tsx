@@ -1,8 +1,6 @@
 import type React from 'react';
-import { Home } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { Button } from '@/components/ui/button';
+import { HomeButton } from '@/components/HomeButton';
 
 interface PageHeaderProps {
   title?: string;
@@ -11,15 +9,11 @@ interface PageHeaderProps {
 }
 
 export function PageHeader({ title, action, children }: PageHeaderProps) {
-  const navigate = useNavigate();
-
   return (
     <nav className="border-b border-border bg-background/80 backdrop-blur-sm sticky top-0 z-10">
       <div className="max-w-3xl mx-auto px-6 h-14 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/')} title="Home" aria-label="Home" className="group hover:bg-transparent">
-            <Home size={16} strokeWidth={1.75} className="group-hover:fill-current" />
-          </Button>
+          <HomeButton />
           {title && <span className="font-bold text-sm text-foreground" style={{ fontFamily: 'Syne, sans-serif' }}>{title}</span>}
           {children}
         </div>

@@ -1,5 +1,5 @@
-import { useNavigate } from 'react-router-dom';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { HomeButton } from '@/components/HomeButton';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -20,7 +20,6 @@ import {
   MessageSquareDot,
   ChevronLeft,
   ChevronRight,
-  Home,
   Share2,
   Coffee,
   Bug,
@@ -40,7 +39,6 @@ function isCorrectAnswer(answer: AnswerValue, correct: number | number[]): boole
 }
 
 export function TestResults() {
-  const navigate = useNavigate();
   const {
     questions,
     answers,
@@ -61,12 +59,18 @@ export function TestResults() {
     formatTime,
   } = useMockTest();
 
+  const score = questions.reduce((acc, q, i) => acc + (isCorrectAnswer(answers[i], q.correct) ? 1 : 0), 0);
+  const pct = questions.length > 0 ? Math.round((score / questions.length) * 100) : 0;
+  const incorrect = questions.length - score - answers.filter((a) => a === null).length;
+  const skipped = answers.filter((a) => a === null).length;
+  const completedBeforeTime = elapsedTime > 0 && elapsedTime < testDuration;
+
   const handleDownload = () => {
     const explanations = getExplanations();
     const lines: string[] = [
       `# ${topic} — ${level}`,
       ``,
-      `**Score: ${Math.round((questions.reduce((acc, q, i) => acc + (isCorrectAnswer(answers[i], q.correct) ? 1 : 0), 0) / questions.length) * 100)}% · ${questions.reduce((acc, q, i) => acc + (isCorrectAnswer(answers[i], q.correct) ? 1 : 0), 0)}/${questions.length} correct**`,
+      `**Score: ${pct}% · ${score}/${questions.length} correct**`,
       ``,
       `---`,
       ``,
@@ -91,12 +95,6 @@ export function TestResults() {
     a.click();
     URL.revokeObjectURL(url);
   };
-
-  const score = questions.reduce((acc, q, i) => acc + (isCorrectAnswer(answers[i], q.correct) ? 1 : 0), 0);
-  const pct = questions.length > 0 ? Math.round((score / questions.length) * 100) : 0;
-  const incorrect = questions.length - score - answers.filter((a) => a === null).length;
-  const skipped = answers.filter((a) => a === null).length;
-  const completedBeforeTime = elapsedTime > 0 && elapsedTime < testDuration;
 
   const handleShare = async () => {
     const text = `I scored ${pct}% on a ${level} "${topic}" mock test on DS Learn — free on-device AI Data Science practice.`;
@@ -132,9 +130,7 @@ export function TestResults() {
       <div className="min-h-screen">
         <nav className="border-b border-border bg-background/80 backdrop-blur-sm sticky top-0 z-10">
           <div className="max-w-3xl mx-auto px-6 h-14 flex items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={() => navigate('/')} title="Home" aria-label="Home" className="h-8 w-8 group hover:bg-transparent">
-              <Home size={15} className="group-hover:fill-current" />
-            </Button>
+            <HomeButton size={15} className="h-8 w-8" />
             <span className="font-semibold text-sm text-foreground flex-1">
               Q{explainIdx + 1} <span className="font-normal text-muted-foreground">of {questions.length}</span>
             </span>
@@ -248,9 +244,7 @@ export function TestResults() {
       <nav className="border-b border-border bg-background/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-3xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={() => navigate('/')} title="Home" aria-label="Home" className="group hover:bg-transparent">
-              <Home size={16} strokeWidth={1.75} className="group-hover:fill-current" />
-            </Button>
+            <HomeButton />
             <span className="font-bold text-sm text-foreground" style={{ fontFamily: 'Syne, sans-serif' }}>Results</span>
           </div>
           <ThemeToggle />
@@ -309,25 +303,25 @@ export function TestResults() {
                 const isSkipped = answers[i] === null;
                 const correct = isCorrectAnswer(answers[i], q.correct);
                 return (
-                  <button
-                    key={i}
-                    onClick={() => setExplainIdx(i)}
-                    className={`group/sq relative w-7 h-7 rounded-md flex items-center justify-center text-[10px] font-bold mono cursor-pointer transition-transform duration-150 hover:-translate-y-0.5 ${
-                      isSkipped
-                        ? 'bg-secondary text-muted-foreground border border-border'
-                        : correct
-                        ? 'bg-foreground text-background'
-                        : 'bg-muted text-foreground border border-border'
-                    }`}
-                  >
-                    {i + 1}
-                    {/* Tooltip */}
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 opacity-0 group-hover/sq:opacity-100 transition-opacity duration-100 pointer-events-none z-50">
-                      <div className="bg-foreground text-background text-[9px] font-medium px-2 py-1 rounded-md whitespace-nowrap flex items-center gap-1 shadow-lg">
-                        <MessageSquareDot size={8} /> Q{i + 1} · {secs}s
-                      </div>
-                    </div>
-                  </button>
+                  <Tooltip key={i}>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => setExplainIdx(i)}
+                        className={`w-7 h-7 rounded-md flex items-center justify-center text-[10px] font-bold mono cursor-pointer transition-transform duration-150 hover:-translate-y-0.5 ${
+                          isSkipped
+                            ? 'bg-secondary text-muted-foreground border border-border'
+                            : correct
+                            ? 'bg-foreground text-background'
+                            : 'bg-muted text-foreground border border-border'
+                        }`}
+                      >
+                        {i + 1}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="flex items-center gap-1">
+                      <MessageSquareDot size={9} /> Q{i + 1} · {secs}s
+                    </TooltipContent>
+                  </Tooltip>
                 );
               })}
             </div>
