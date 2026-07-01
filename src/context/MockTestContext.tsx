@@ -10,6 +10,8 @@ export type GenStage = 'planning' | 'generating';
 
 export type AnswerValue = number | number[] | null;
 
+export type ChatMessage = { role: 'user' | 'assistant'; content: string };
+
 // ── Session persistence ────────────────────────────────────────────────────
 
 const setupKey = (id: string) => `ds_mocktest_setup_${id}`;
@@ -80,6 +82,11 @@ export interface MockTestContextValue {
   explanationError: string | null;
   expanded: boolean;
   setExpanded: (v: boolean) => void;
+  chatMessages: ChatMessage[];
+  chatInput: string;
+  setChatInput: (v: string) => void;
+  chatStreaming: boolean;
+  sendQuestionChat: (message: string) => void;
   selectAnswer: (optionIdx: number) => void;
   goToQuestion: (idx: number) => void;
   nextQuestion: () => void;
@@ -183,6 +190,13 @@ export function MockTestProvider({ children }: { children: ReactNode }) {
   const [explanationError, setExplanationError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const explanationCache = useRef<Record<number, string>>({});
+
+  // Follow-up chat on the shared question-explanation thread (one thread across all
+  // questions — see ExplainerAgent's shared qaSession).
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatStreaming, setChatStreaming] = useState(false);
+  const chatAbortRef = useRef<AbortController | null>(null);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -399,6 +413,44 @@ export function MockTestProvider({ children }: { children: ReactNode }) {
 
   if (!id || !topic || !level) return null;
 
+  // Send a follow-up chat message on the shared question-explanation thread.
+  const sendQuestionChat = useCallback((message: string) => {
+    const text = message.trim();
+    if (!text || chatStreaming || !explainerRef.current?.isReady) return;
+
+    setChatInput('');
+    setChatMessages((prev) => [...prev, { role: 'user', content: text }, { role: 'assistant', content: '' }]);
+    setChatStreaming(true);
+
+    const abort = new AbortController();
+    chatAbortRef.current = abort;
+
+    explainerRef.current
+      .askAboutQuestion(
+        text,
+        (chunk) =>
+          setChatMessages((prev) => {
+            const next = [...prev];
+            next[next.length - 1] = { role: 'assistant', content: chunk };
+            return next;
+          }),
+        abort.signal
+      )
+      .then(() => setChatStreaming(false))
+      .catch((err: unknown) => {
+        if ((err as Error).name === 'AbortError') return; // navigated away
+        setChatStreaming(false);
+        setChatMessages((prev) => {
+          const next = [...prev];
+          next[next.length - 1] = { role: 'assistant', content: '⚠️ Sorry, I could not respond. Please try again.' };
+          return next;
+        });
+      });
+  }, [chatStreaming]);
+
+  // Abort any in-flight chat when the provider unmounts.
+  useEffect(() => () => chatAbortRef.current?.abort(), []);
+
   const value: MockTestContextValue = {
     topic,
     level,
@@ -427,6 +479,11 @@ export function MockTestProvider({ children }: { children: ReactNode }) {
     explanationError,
     expanded,
     setExpanded,
+    chatMessages,
+    chatInput,
+    setChatInput,
+    chatStreaming,
+    sendQuestionChat,
     selectAnswer,
     goToQuestion,
     nextQuestion,

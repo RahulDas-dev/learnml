@@ -2,6 +2,8 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { HomeButton } from '@/components/HomeButton';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
+import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MathText } from '@/components/MathText';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
@@ -20,6 +22,8 @@ import {
   MessageSquareDot,
   ChevronLeft,
   ChevronRight,
+  MessageSquare,
+  Send,
   Share2,
   Coffee,
   Bug,
@@ -49,6 +53,11 @@ export function TestResults() {
     explanation,
     explanationLoading,
     explanationError,
+    chatMessages,
+    chatInput,
+    setChatInput,
+    chatStreaming,
+    sendQuestionChat,
     onTryAgain,
     onExplainTopic,
     getExplanations,
@@ -201,6 +210,65 @@ export function TestResults() {
               <Skeleton className="h-3 w-9/12" />
               <Skeleton className="h-3 w-3/5" />
               <Skeleton className="h-3 w-2/3" />
+            </div>
+          )}
+
+          {/* Follow-up chat — one shared thread across questions */}
+          {isDone && (
+            <div className="mt-8 border-t border-border pt-6 fade-in">
+              <p className="text-xs font-semibold text-muted-foreground mb-3 flex items-center gap-1.5">
+                <MessageSquare size={13} /> Ask a follow-up
+              </p>
+
+              {chatMessages.length > 0 && (
+                <div className="space-y-3 mb-4">
+                  {chatMessages.map((msg, i) => (
+                    <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                      {msg.role === 'user' ? (
+                        <div className="max-w-[85%] rounded-2xl rounded-br-md px-4 py-2.5 text-sm bg-foreground text-background">
+                          <p className="whitespace-pre-wrap">{msg.content}</p>
+                        </div>
+                      ) : (
+                        <Card className="max-w-[85%] rounded-bl-md px-4 py-2.5 text-sm">
+                          {msg.content ? (
+                            <div
+                              className="prose-sm text-sm text-foreground leading-relaxed"
+                              dangerouslySetInnerHTML={{ __html: renderSlideMarkdown(msg.content) }}
+                            />
+                          ) : (
+                            <div className="flex gap-1 py-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '0ms' }} />
+                              <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '150ms' }} />
+                              <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '300ms' }} />
+                            </div>
+                          )}
+                        </Card>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <Textarea
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuestionChat(chatInput); }
+                  }}
+                  placeholder="Ask about this question…"
+                  className="flex-1 min-h-0 resize-none"
+                  rows={1}
+                  disabled={chatStreaming}
+                />
+                <Button
+                  onClick={() => sendQuestionChat(chatInput)}
+                  disabled={!chatInput.trim() || chatStreaming}
+                  className="px-4 disabled:opacity-30"
+                >
+                  <Send size={16} />
+                </Button>
+              </div>
             </div>
           )}
 

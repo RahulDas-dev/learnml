@@ -1,6 +1,6 @@
 import { BaseAgent } from './BaseAgent';
 import type { AgentInitOptions } from './BaseAgent';
-import { streamResponse } from './promptApi';
+import { streamResponse, estimateTokens } from './promptApi';
 import type { LanguageModelSession } from './promptApi';
 import type { SlideOutline, MCQQuestion } from '@/lib/config';
 import type { AnswerValue } from '@/context/MockTestContext';
@@ -22,11 +22,25 @@ interface SummarizerInstance {
   destroy?: () => void;
 }
 
+// Question explanations + their follow-up chat share ONE session so the discussion
+// keeps full context. When free context drops to this fraction of the window, we
+// compact it by summarizing the discussion and reseeding a fresh session.
+// Ref: https://developer.chrome.com/docs/ai/session-compacting
+const COMPACT_WHEN_REMAINING_RATIO = 0.25;
+const ASSUMED_CONTEXT_WINDOW = 4096;
+
 export class ExplainerAgent extends BaseAgent {
   protected readonly systemPrompt =
     'You are a world-class Data Science educator. Explain concepts clearly, use examples, include ASCII diagrams and LaTeX equations where helpful. Never output raw JSON.';
 
   private chatSession: LanguageModelSession | null = null;
+
+  // Shared Q&A session for question explanations + follow-up chat (one thread across
+  // all questions), the plain-text turns kept for summarization, and a pending
+  // summary to prepend to the next prompt right after a compaction.
+  private qaSession: LanguageModelSession | null = null;
+  private qaTurns: string[] = [];
+  private pendingSummary = '';
 
   async init(options?: AgentInitOptions) {
     return super.init({ temperature: 0.8, topK: 40, ...options });
@@ -51,8 +65,9 @@ export class ExplainerAgent extends BaseAgent {
   }
 
   /**
-   * Explain a quiz question and user's answer.
-   * Uses a fresh cloned session per question — no context bleed between questions.
+   * Explain a quiz question on the SHARED Q&A session, so follow-up chat has the
+   * full context of every question discussed. The session is compacted (summarized
+   * + reseeded) once its free context drops below COMPACT_WHEN_REMAINING_RATIO.
    */
   async explainQuestion(
     question: MCQQuestion,
@@ -60,13 +75,68 @@ export class ExplainerAgent extends BaseAgent {
     onChunk: (text: string) => void,
     signal?: AbortSignal
   ): Promise<string> {
+    return this.runQaTurn(
+      buildQuestionExplanationPrompt(question, userAnswer),
+      `Q: ${question.question}`,
+      onChunk,
+      signal
+    );
+  }
+
+  /** Send a follow-up chat message about the questions on the shared Q&A session. */
+  async askAboutQuestion(
+    userMessage: string,
+    onChunk: (text: string) => void,
+    signal?: AbortSignal
+  ): Promise<string> {
+    return this.runQaTurn(userMessage, `User: ${userMessage}`, onChunk, signal);
+  }
+
+  /** One turn on the shared Q&A session: prompt, record, compact if nearly full. */
+  private async runQaTurn(
+    prompt: string,
+    turnLabel: string,
+    onChunk: (text: string) => void,
+    signal?: AbortSignal
+  ): Promise<string> {
     if (!this.session) throw new Error('ExplainerAgent not initialised');
-    const clone = await this.session.clone();
+    if (!this.qaSession) this.qaSession = await this.session.clone();
+
+    // After a compaction the fresh session has no history — carry the summary in.
+    const preamble = this.pendingSummary
+      ? `Context from earlier in this discussion:\n${this.pendingSummary}\n\n`
+      : '';
+
     try {
-      return await streamResponse(clone, buildQuestionExplanationPrompt(question, userAnswer), onChunk, signal);
-    } finally {
-      clone.destroy?.();
+      const result = await streamResponse(this.qaSession, preamble + prompt, onChunk, signal);
+      this.pendingSummary = '';                       // now baked into the session
+      this.qaTurns.push(turnLabel, `Answer: ${result}`);
+      await this.compactQaIfNeeded();
+      return result;
+    } catch (err) {
+      // A mid-stream abort leaves a partial turn — drop the session so it can't
+      // corrupt later turns.
+      if ((err as Error).name === 'AbortError') {
+        this.qaSession?.destroy?.();
+        this.qaSession = null;
+      }
+      throw err;
     }
+  }
+
+  /** Summarize + reseed the shared session when its free context is nearly gone. */
+  private async compactQaIfNeeded(): Promise<void> {
+    const s = this.qaSession;
+    if (!s) return;
+    const window = s.contextWindow && s.contextWindow > 0 ? s.contextWindow : ASSUMED_CONTEXT_WINDOW;
+    const used = s.contextUsage && s.contextUsage > 0 ? s.contextUsage : estimateTokens(this.qaTurns.join('\n\n'));
+    if (1 - Math.min(used / window, 1) > COMPACT_WHEN_REMAINING_RATIO) return;
+
+    const summary = await this.summarize(this.qaTurns.join('\n\n'), 'key-points');
+    this.pendingSummary = summary;
+    this.qaSession?.destroy?.();
+    this.qaSession = null;                             // re-cloned lazily on next use
+    this.qaTurns = [`(Summary of earlier discussion) ${summary}`];
   }
 
   /** Clone base session into an isolated chat session */
@@ -102,6 +172,8 @@ export class ExplainerAgent extends BaseAgent {
   destroy(): void {
     this.chatSession?.destroy?.();
     this.chatSession = null;
+    this.qaSession?.destroy?.();
+    this.qaSession = null;
     super.destroy();
   }
 }
