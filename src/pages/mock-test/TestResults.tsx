@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MathText } from '@/components/MathText';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import type { AnswerValue } from '@/context/MockTestContext';
 import { useMockTest } from '@/hooks/useMockTest';
 import { renderSlideMarkdown } from '@/lib/markdownRenderer';
@@ -19,12 +20,15 @@ import {
   MessageSquareDot,
   ChevronLeft,
   ChevronRight,
-  ArrowLeft,
   Home,
   Share2,
+  Coffee,
+  Bug,
 } from 'lucide-react';
 
 const SITE_URL = 'https://rahuldas-dev.github.io/learnml/';
+const ISSUE_URL = 'https://github.com/RahulDas-dev/learnml/issues/new';
+const COFFEE_URL = 'https://www.buymeacoffee.com/rahuldas';
 
 function isCorrectAnswer(answer: AnswerValue, correct: number | number[]): boolean {
   if (answer === null) return false;
@@ -127,9 +131,9 @@ export function TestResults() {
     return (
       <div className="min-h-screen">
         <nav className="border-b border-border bg-background/80 backdrop-blur-sm sticky top-0 z-10">
-          <div className="max-w-3xl mx-auto px-4 h-14 flex items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={() => setExplainIdx(null)} className="h-8 w-8">
-              <ArrowLeft size={15} />
+          <div className="max-w-3xl mx-auto px-6 h-14 flex items-center gap-2">
+            <Button variant="ghost" size="icon" onClick={() => navigate('/')} title="Home" aria-label="Home" className="h-8 w-8 group hover:bg-transparent">
+              <Home size={15} className="group-hover:fill-current" />
             </Button>
             <span className="font-semibold text-sm text-foreground flex-1">
               Q{explainIdx + 1} <span className="font-normal text-muted-foreground">of {questions.length}</span>
@@ -137,9 +141,6 @@ export function TestResults() {
             <Badge variant="secondary" className="font-normal text-[10px] mono">
               {q.answerMode === 'multiple' ? 'Multi-select' : 'Single select'}
             </Badge>
-            <Button variant="ghost" size="icon" onClick={() => navigate('/')} title="Home" aria-label="Home" className="h-8 w-8">
-              <Home size={15} />
-            </Button>
             <ThemeToggle />
           </div>
         </nav>
@@ -246,13 +247,13 @@ export function TestResults() {
     <div className="min-h-screen">
       <nav className="border-b border-border bg-background/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-3xl mx-auto px-6 h-14 flex items-center justify-between">
-          <span className="font-bold text-sm text-foreground" style={{ fontFamily: 'Syne, sans-serif' }}>Results</span>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={() => navigate('/')} title="Home" aria-label="Home">
-              <Home size={16} strokeWidth={1.75} />
+            <Button variant="ghost" size="icon" onClick={() => navigate('/')} title="Home" aria-label="Home" className="group hover:bg-transparent">
+              <Home size={16} strokeWidth={1.75} className="group-hover:fill-current" />
             </Button>
-            <ThemeToggle />
+            <span className="font-bold text-sm text-foreground" style={{ fontFamily: 'Syne, sans-serif' }}>Results</span>
           </div>
+          <ThemeToggle />
         </div>
       </nav>
 
@@ -261,8 +262,14 @@ export function TestResults() {
         {/* ── Hero card ── */}
         <div className="mb-6 fade-in rounded-2xl bg-card shadow-sm" style={{ overflow: 'visible' }}>
 
+          {/* Topic + level header */}
+          <div className="px-6 pt-6 text-center pb-4">
+            <h1 className="text-lg font-bold text-foreground leading-snug" style={{ fontFamily: 'Syne, sans-serif' }}>{topic}</h1>
+            <p className="text-[11px] text-muted-foreground mono capitalize mt-1">{level} · {questions.length} questions</p>
+          </div>
+
           {/* Donut score ring */}
-          <div className="rounded-t-2xl flex items-center justify-center pt-10 pb-6">
+          <div className="rounded-t-2xl flex items-center justify-center pt-6 pb-6">
             <div className="relative" style={{ width: 210, height: 210 }}>
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="w-[132px] h-[132px] rounded-full bg-card/85 backdrop-blur-sm" />
@@ -287,9 +294,8 @@ export function TestResults() {
                 )}
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-3xl font-bold text-foreground leading-none" style={{ fontFamily: 'Syne, sans-serif' }}>{pct}%</span>
-                <span className="text-[10px] text-muted-foreground mono mt-1 max-w-[90px] text-center truncate">{topic}</span>
-                <span className="text-[9px] text-muted-foreground/60 capitalize mt-0.5">{level}</span>
+                <span className="text-4xl font-bold text-foreground leading-none" style={{ fontFamily: 'Syne, sans-serif' }}>{pct}%</span>
+                <span className="text-[10px] text-muted-foreground mono mt-1.5">{score}/{questions.length} correct</span>
               </div>
             </div>
           </div>
@@ -356,9 +362,39 @@ export function TestResults() {
           <Button variant="outline" onClick={handleDownload} className="py-3 text-sm">
             <Download size={14} /> Download
           </Button>
-          <Button onClick={onExplainTopic} className="py-3 text-sm">
-            <BookOpen size={14} /> Explain Topic
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="cursor-not-allowed w-full">
+                <Button disabled className="w-full py-3 text-sm pointer-events-none">
+                  <BookOpen size={14} /> Explain Topic
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>Coming Soon — under construction</TooltipContent>
+          </Tooltip>
+        </div>
+
+        {/* ── Support & feedback ── */}
+        <div className="mt-8 flex flex-col items-center gap-3 text-center fade-in-2">
+          <a
+            href={COFFEE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-secondary transition-colors"
+          >
+            <Coffee size={15} /> Buy me a coffee if you like this
+          </a>
+          <p className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
+            <Bug size={13} /> Facing a problem or found a bug?{' '}
+            <a
+              href={ISSUE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-2 hover:text-foreground"
+            >
+              Raise an issue on GitHub
+            </a>
+          </p>
         </div>
       </div>
     </div>

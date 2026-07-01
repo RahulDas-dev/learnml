@@ -6,7 +6,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
-  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   Home,
@@ -36,10 +35,10 @@ export function ExplainSlides() {
     <div className="min-h-screen">
       {/* Header with progress */}
       <nav className="border-b border-border bg-background/80 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-6 h-14 flex items-center justify-between">
+        <div className="max-w-3xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={onGoHome}>
-              <ArrowLeft size={16} strokeWidth={1.75} />
+            <Button variant="ghost" size="icon" onClick={onGoHome} title="Home" aria-label="Home" className="group hover:bg-transparent">
+              <Home size={16} strokeWidth={1.75} className="group-hover:fill-current" />
             </Button>
             <span className="font-bold text-sm text-foreground truncate max-w-48" style={{ fontFamily: 'Syne, sans-serif' }}>
               {confirmedTopic}
@@ -49,9 +48,6 @@ export function ExplainSlides() {
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={onGoHome} title="Home" aria-label="Home">
-              <Home size={16} strokeWidth={1.75} />
-            </Button>
             <ThemeToggle />
           </div>
         </div>

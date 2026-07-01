@@ -6,6 +6,7 @@ import { useAICapability } from '@/hooks/useAICapability';
 import { FlaskConical, BookOpen, ArrowRight, Sigma, ShieldCheck, Zap, Layers } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
 function IconBox({ children }: { children: React.ReactNode }) {
   return (
@@ -117,25 +118,32 @@ export default function HomePage() {
             </div>
           </Card>
 
-          {/* Explain Topic */}
-          <Card
-            onClick={() => navigate('/explain')}
-            className="group cursor-pointer hover:-translate-y-0.5 p-8 text-left"
-          >
-            <div className="flex items-center gap-3 mb-2">
-              <IconBox>
-                <BookOpen size={20} strokeWidth={1.5} className="text-foreground group-hover:text-background transition-colors duration-200" aria-hidden="true" />
-              </IconBox>
-              <h2 className="text-xl font-bold text-foreground">Explain Topic</h2>
-            </div>
-            <p className="text-muted-foreground text-sm font-mono leading-relaxed mb-6">
-              Get a comprehensive, structured explanation of any Data Science topic.
-            </p>
-            <div className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground">
-              Explore Topics
-              <ArrowRight size={14} strokeWidth={2} className="group-hover:translate-x-1 transition-transform" aria-hidden="true" />
-            </div>
-          </Card>
+          {/* Explain Topic — coming soon (disabled) */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Card
+                aria-disabled="true"
+                className="relative p-8 text-left opacity-60 cursor-not-allowed"
+              >
+                <span className="absolute top-3 right-3 inline-flex items-center leading-none text-[10px] mono uppercase tracking-wide text-muted-foreground border border-border rounded-full px-2.5 py-1">
+                  Coming soon
+                </span>
+                <div className="flex items-center gap-3 mb-2">
+                  <IconBox>
+                    <BookOpen size={20} strokeWidth={1.5} className="text-foreground" aria-hidden="true" />
+                  </IconBox>
+                  <h2 className="text-xl font-bold text-foreground">Explain Topic</h2>
+                </div>
+                <p className="text-muted-foreground text-sm font-mono leading-relaxed mb-6">
+                  Get a comprehensive, structured explanation of any Data Science topic.
+                </p>
+                <div className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground">
+                  Coming soon
+                </div>
+              </Card>
+            </TooltipTrigger>
+            <TooltipContent>Coming Soon — under construction</TooltipContent>
+          </Tooltip>
         </section>
 
         {/* Features */}

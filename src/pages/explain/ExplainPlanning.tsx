@@ -3,11 +3,11 @@ import { Loader } from 'lucide-react';
 import { useExplain } from '@/hooks/useExplain';
 
 export function ExplainPlanning() {
-  const { confirmedTopic, planningProgress, onGoHome } = useExplain();
+  const { confirmedTopic, planningProgress } = useExplain();
 
   return (
     <div className="min-h-screen">
-      <PageHeader onBack={onGoHome} title="Explain Topic" />
+      <PageHeader title="Explain Topic" />
       <div className="max-w-3xl mx-auto px-6 py-20">
         <div className="text-center fade-in">
           <Loader size={32} className="animate-spin text-muted-foreground mx-auto mb-6" />

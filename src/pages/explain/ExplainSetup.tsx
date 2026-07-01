@@ -25,12 +25,11 @@ export function ExplainSetup() {
     aiMessage,
     downloadProgress,
     onStart,
-    onGoHome,
   } = useExplain();
 
   return (
     <div className="min-h-screen">
-      <PageHeader onBack={onGoHome} title="Explain Topic" />
+      <PageHeader title="Explain Topic" />
       <div className="max-w-3xl mx-auto px-6 py-10">
         <div className="mb-8 fade-in">
           <h1 className="text-3xl font-bold text-foreground mb-1">What do you want to learn?</h1>

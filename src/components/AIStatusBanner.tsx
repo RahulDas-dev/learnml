@@ -68,6 +68,31 @@ export function AIStatusBanner({ status, downloadProgress, message, onRetry }: P
   const header = lines[0];
   const items = lines.slice(1).filter(Boolean);
 
+  // Simple, single-line progress states read better centered.
+  if (status === 'checking' || status === 'downloading') {
+    return (
+      <div className={`px-4 py-3 rounded-lg border ${cfg.cls} mb-4`}>
+        <div className="flex flex-col items-center text-center gap-2">
+          <div className="flex items-center gap-2">
+            <span className={`${cfg.iconCls} flex-shrink-0`}>{cfg.icon}</span>
+            <p className={`text-sm ${cfg.textCls}`}>{header}</p>
+          </div>
+          {status === 'downloading' && (
+            downloadProgress && downloadProgress > 0 ? (
+              <Progress value={downloadProgress} className="h-1 w-full" />
+            ) : (
+              // Chrome often reports no measurable % for the large model download —
+              // show an indeterminate animation instead of a frozen 0%.
+              <div className="indeterminate-track h-1 w-full rounded bg-foreground/15">
+                <div className="indeterminate-bar h-full w-1/3 rounded bg-foreground/60" />
+              </div>
+            )
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`flex items-start gap-3 px-4 py-3 rounded-lg border ${cfg.cls} mb-4`}>
       <span className={`${cfg.iconCls} flex-shrink-0 mt-0.5`}>{cfg.icon}</span>

@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { HashRouter, Routes, Route } from 'react-router-dom';
 import { GridBackground } from './components/GridBackground';
+import { TooltipProvider } from './components/ui/tooltip';
 import HomePage from './pages/HomePage';
 
 // Heavy routes (AI agents, KaTeX, quiz/explain flows) are code-split so the
@@ -15,6 +16,7 @@ const TestResults = lazy(() => import('./pages/mock-test/TestResults').then((m) 
 
 function App() {
   return (
+    <TooltipProvider delayDuration={150}>
     <HashRouter>
       <GridBackground>
         <Suspense fallback={<div className="min-h-screen" />}>
@@ -32,6 +34,7 @@ function App() {
         </Suspense>
       </GridBackground>
     </HashRouter>
+    </TooltipProvider>
   );
 }
 

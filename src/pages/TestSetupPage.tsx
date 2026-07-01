@@ -77,6 +77,7 @@ export default function TestSetupPage() {
         topic: result.topic || topic,          // use the canonical rephrasing
         level: selectedLevel,
         overlappedTopic: result.overlappedTopic,
+        validationTokens: agentRef.current?.lastTokens ?? 0,
       }));
       navigate(`/mock-test/${id}/generating`);
     } catch (err: unknown) {
@@ -88,7 +89,7 @@ export default function TestSetupPage() {
 
   return (
     <div className="min-h-screen">
-      <PageHeader onBack={() => navigate('/')} title="Mock Test">
+      <PageHeader title="Mock Test">
         <span className="text-xs text-muted-foreground mono">configure &amp; start</span>
       </PageHeader>
 
