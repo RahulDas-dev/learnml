@@ -15,7 +15,7 @@ export type AnswerValue = number | number[] | null;
 const setupKey = (id: string) => `ds_mocktest_setup_${id}`;
 const stateKey = (id: string) => `ds_mocktest_state_${id}`;
 
-interface SetupData { topic: string; level: string; overlappedTopic?: string; }
+interface SetupData { topic: string; level: string; overlappedTopic?: string; validationTokens?: number; }
 
 interface SavedState {
   questions: MCQQuestion[];
@@ -59,6 +59,7 @@ export interface MockTestContextValue {
   testDuration: number;
   genStage: GenStage;
   generatedCount: number;
+  validationTokens: number;
   planTokens: number;
   genTokens: number;
   rawStream: string;
@@ -103,6 +104,7 @@ export function MockTestProvider({ children }: { children: ReactNode }) {
   const topic = setup?.topic ?? '';
   const level = setup?.level ?? '';
   const overlappedTopic = setup?.overlappedTopic ?? '';
+  const validationTokens = setup?.validationTokens ?? 0;
 
   const config = LEVEL_CONFIG[level] ?? LEVEL_CONFIG.intermediate;
   const totalQuestions = config.total;
@@ -229,6 +231,7 @@ export function MockTestProvider({ children }: { children: ReactNode }) {
         const blueprint = await plannerRef.current!.planQuestions(
           topic, level, overlappedTopic,
           (text) => { setRawStream(text); },
+          (tokens) => { setPlanTokens(tokens); },
           signal
         );
         setPlanTokens(plannerRef.current!.lastTokens);
@@ -403,6 +406,7 @@ export function MockTestProvider({ children }: { children: ReactNode }) {
     testDuration,
     genStage,
     generatedCount,
+    validationTokens,
     planTokens,
     genTokens,
     rawStream,

@@ -1,6 +1,6 @@
 import { BaseAgent } from './BaseAgent';
 import type { AgentInitOptions } from './BaseAgent';
-import { streamResponse, sessionTokenUsage } from './promptApi';
+import { streamResponse, sessionTokenUsage, estimateTokens } from './promptApi';
 import type { LanguageModelSession } from './promptApi';
 import type { MCQQuestion, OptionContentType } from '@/lib/config';
 import { SingleMCQQuestionJsonSchema } from './schemas';
@@ -20,19 +20,77 @@ const PER_QUESTION_TIMEOUT_MS = 30000;
 // it, the model is looping — abort immediately rather than waiting for the timeout.
 const RUNAWAY_CHAR_LIMIT = 4000;
 
+// We reuse ONE session across questions (cloning per question is slow). To stop the
+// growing conversation from filling the context window, we "compact" it once the
+// free space drops to this fraction of the window — i.e. ~75% used. Since questions
+// are independent we compact by resetting to a fresh session (clearing history)
+// rather than summarising. Ref: https://developer.chrome.com/docs/ai/session-compacting
+const COMPACT_WHEN_REMAINING_RATIO = 0.25;
+
+// Fallback window size if the browser doesn't expose session.contextWindow.
+const ASSUMED_CONTEXT_WINDOW = 4096;
+
 export class QuestionGeneratorAgent extends BaseAgent {
   protected readonly systemPrompt =
     'You are a Data Science quiz generator. Follow instructions exactly. Output only valid JSON when asked for a question.';
+
+  // Shared working session reused across questions, plus an estimated running token
+  // count for when the browser exposes no real context counter.
+  private genSession: LanguageModelSession | null = null;
+  private estimatedContextTokens = 0;
 
   async init(options?: AgentInitOptions) {
     return super.init({ temperature: 0.9, topK: 40, ...options });
   }
 
+  destroy(): void {
+    this.genSession?.destroy?.();
+    this.genSession = null;
+    super.destroy();
+  }
+
+  /** Get the reused generation session, cloning a fresh one from the base if needed. */
+  private async getGenSession(): Promise<LanguageModelSession> {
+    if (!this.session) throw new Error('QuestionGeneratorAgent not initialised');
+    if (!this.genSession) {
+      this.genSession = await this.session.clone();
+      this.estimatedContextTokens = 0;
+    }
+    return this.genSession;
+  }
+
+  /** Drop the working session (its context is cleared); the next use clones fresh. */
+  private resetGenSession(): void {
+    this.genSession?.destroy?.();
+    this.genSession = null;
+    this.estimatedContextTokens = 0;
+  }
+
+  /**
+   * Compact the working session if its free context has dropped to
+   * COMPACT_WHEN_REMAINING_RATIO of the window. Uses the real counter when the
+   * browser exposes it, otherwise an estimated running token total.
+   */
+  private compactIfNeeded(addedTokens: number): void {
+    const s = this.genSession;
+    if (!s) return;
+    this.estimatedContextTokens += addedTokens;
+
+    const window = s.contextWindow && s.contextWindow > 0 ? s.contextWindow : ASSUMED_CONTEXT_WINDOW;
+    const used = s.contextUsage && s.contextUsage > 0 ? s.contextUsage : this.estimatedContextTokens;
+    const remainingRatio = 1 - Math.min(used / window, 1);
+
+    if (remainingRatio <= COMPACT_WHEN_REMAINING_RATIO) {
+      this.resetGenSession();
+    }
+  }
+
   /**
    * Generate every question from the planner's blueprint — one model call per
-   * question, **sequentially**. Gemini Nano is a single on-device model and cannot
-   * reliably serve concurrent prompts (parallel calls mostly error/time out), so we
-   * run one at a time and retry any dropped slot up to MAX_ATTEMPTS_PER_QUESTION.
+   * question, **sequentially on a single reused session** (cloning per question is
+   * slow). Gemini Nano can't reliably serve concurrent prompts, so we run one at a
+   * time, retry any dropped slot up to MAX_ATTEMPTS_PER_QUESTION, and compact the
+   * session when its context fills.
    *
    * `onProgress` reports the number of questions **successfully** produced so far
    * (not attempts) plus the running total of tokens consumed, so the UI counter
@@ -51,7 +109,7 @@ export class QuestionGeneratorAgent extends BaseAgent {
 
     const results: Array<MCQQuestion | null> = new Array(blueprints.length).fill(null);
     let succeeded = 0;
-    let totalTokens = 0;
+    let completedTokens = 0; // tokens from finished attempts
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS_PER_QUESTION; attempt++) {
       if (signal?.aborted) break;
@@ -60,37 +118,67 @@ export class QuestionGeneratorAgent extends BaseAgent {
         if (signal?.aborted) break;
         if (results[i]) continue;
 
-        const q = await this.generateOneQuestion(topic, level, blueprints[i], signal, onStream)
-          .catch(() => null);
+        const q = await this.generateOneQuestion(
+          topic, level, blueprints[i], signal, onStream,
+          // Live cumulative tokens = finished attempts + this question's running usage.
+          (live) => onProgress(succeeded, completedTokens + live)
+        ).catch((err: unknown) => {
+          console.error(
+            `[QuestionGenerator] question #${i + 1} (${blueprints[i].questionType}/${blueprints[i].subtopic}) threw on attempt ${attempt + 1}:`,
+            err
+          );
+          return null;
+        });
 
-        totalTokens += this.lastTokens; // count tokens whether the attempt succeeded or not
+        if (!q && !signal?.aborted) {
+          console.warn(
+            `[QuestionGenerator] question #${i + 1} (${blueprints[i].questionType}/${blueprints[i].subtopic}) produced no valid question on attempt ${attempt + 1}/${MAX_ATTEMPTS_PER_QUESTION}.`
+          );
+        }
+
+        completedTokens += this.lastTokens; // count tokens whether the attempt succeeded or not
         if (q) {
           results[i] = q;
           succeeded += 1;
         }
-        onProgress(succeeded, totalTokens);
+        onProgress(succeeded, completedTokens);
       }
       if (results.every((r) => r !== null)) break; // all slots filled — done early
+    }
+
+    this.resetGenSession(); // release the shared session once the batch is done
+
+    if (succeeded < blueprints.length && !signal?.aborted) {
+      const missing = results
+        .map((q, i) => (q ? null : `#${i + 1} ${blueprints[i].questionType}/${blueprints[i].subtopic}`))
+        .filter(Boolean);
+      console.warn(
+        `[QuestionGenerator] generated ${succeeded}/${blueprints.length} questions after ${MAX_ATTEMPTS_PER_QUESTION} attempts. Still missing:`,
+        missing
+      );
     }
 
     return results.filter((q): q is MCQQuestion => q !== null);
   }
 
   /**
-   * Generate a single question for one blueprint entry on an isolated cloned session.
-   * Guarded against runaway/looping output: the stream is aborted if it exceeds
-   * RUNAWAY_CHAR_LIMIT or PER_QUESTION_TIMEOUT_MS, in which case this resolves to
-   * null (a dropped question) rather than hanging the whole batch.
+   * Generate a single question for one blueprint entry on the **shared** working
+   * session (reused across questions for speed). After a successful question the
+   * session is compacted if its context is nearly full; if the call aborts/fails
+   * (timeout or runaway loop) the session is reset so its polluted context can't
+   * bleed into later questions. Resolves to null on a dropped question.
    */
   async generateOneQuestion(
     topic: string,
     level: string,
     blueprint: QuestionBlueprint,
     signal?: AbortSignal,
-    onStream?: (text: string) => void
+    onStream?: (text: string) => void,
+    onUsage?: (tokens: number) => void
   ): Promise<MCQQuestion | null> {
     if (!this.session) throw new Error('QuestionGeneratorAgent not initialised');
-    const clone: LanguageModelSession = await this.session.clone();
+    const session = await this.getGenSession();
+    const before = sessionTokenUsage(session); // context tokens before this turn
 
     // Per-question abort controller chained to the batch signal + timeout + length guard.
     const ctrl = new AbortController();
@@ -99,7 +187,8 @@ export class QuestionGeneratorAgent extends BaseAgent {
       if (signal.aborted) ctrl.abort();
       else signal.addEventListener('abort', onParentAbort, { once: true });
     }
-    const timer = setTimeout(() => ctrl.abort(), PER_QUESTION_TIMEOUT_MS);
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; ctrl.abort(); }, PER_QUESTION_TIMEOUT_MS);
 
     let guardTripped = false;
     const onChunk = (text: string) => {
@@ -112,22 +201,47 @@ export class QuestionGeneratorAgent extends BaseAgent {
 
     try {
       const raw = await streamResponse(
-        clone,
+        session,
         buildSingleQuestionPrompt(topic, level, blueprint),
         onChunk,
         ctrl.signal,
-        SingleMCQQuestionJsonSchema as Record<string, unknown>
+        SingleMCQQuestionJsonSchema as Record<string, unknown>,
+        (t) => { onUsage?.(t); } // live per-question estimate
       );
-      return parseSingleQuestion(raw, blueprint);
+      // This turn's tokens = context delta (real), or output estimate as a fallback.
+      const after = sessionTokenUsage(session);
+      this.lastTokens = after > before ? after - before : estimateTokens(raw);
+      const q = parseSingleQuestion(raw, blueprint);
+      if (!q) {
+        console.error(
+          `[QuestionGenerator] failed to parse a valid question from the model output for "${blueprint.subtopic}" (${blueprint.questionType}). Raw output:\n`,
+          raw
+        );
+      }
+      this.compactIfNeeded(this.lastTokens); // reset session if context is nearly full
+      return q;
     } catch (err: unknown) {
-      // Timeout / runaway / parent cancel all land here — drop this question.
-      if ((err as Error).name === 'AbortError') return null;
-      throw err;
+      // Timeout / runaway / parent cancel — the aborted turn may have polluted the
+      // shared context, so reset the session before the next question/retry.
+      this.lastTokens = estimateTokens(blueprint.subtopic + blueprint.context);
+      this.resetGenSession();
+      if ((err as Error).name === 'AbortError') {
+        if (guardTripped) {
+          console.error(
+            `[QuestionGenerator] aborted "${blueprint.subtopic}" (${blueprint.questionType}): runaway output exceeded ${RUNAWAY_CHAR_LIMIT} chars (model looping).`
+          );
+        } else if (timedOut) {
+          console.error(
+            `[QuestionGenerator] aborted "${blueprint.subtopic}" (${blueprint.questionType}): timed out after ${PER_QUESTION_TIMEOUT_MS} ms.`
+          );
+        }
+        // else: parent batch cancelled — expected, no log.
+        return null;
+      }
+      throw err; // unexpected error — logged by the batch loop's catch
     } finally {
-      this.lastTokens = sessionTokenUsage(clone);
       clearTimeout(timer);
       signal?.removeEventListener('abort', onParentAbort);
-      clone.destroy?.();
     }
   }
 }
@@ -148,11 +262,13 @@ function buildSingleQuestionPrompt(
   return `Write ONE ${bp.questionType} multiple-choice question about "${topicLabel}" for a ${level}-level student.
 
 Subtopic: ${bp.subtopic}
+Difficulty: calibrate to a ${level} learner — match the depth, vocabulary, and how tricky the distractors are to ${level} level (easier for beginner, deeper/edge-case for advanced/expert).
 Brief: ${bp.context || `Test understanding of ${bp.subtopic}.`}
 
 ${typeRules}
 
 Universal rules:
+- Do NOT repeat or rephrase any question you have already generated in this session — this question must be distinct and focused only on the subtopic above.
 - Exactly 4 options. Every option MUST be distinct, complete, and plausible.
 - NEVER use placeholder or filler options such as "print(x)", "TODO", "None of the above", "All of the above", or repeated/near-identical options.
 - Exactly one set of correct answer(s); the wrong options must be genuinely incorrect but believable.

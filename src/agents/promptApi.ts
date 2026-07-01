@@ -130,12 +130,17 @@ export async function initLanguageModel(
       ...(options?.expectedOutputs != null && { expectedOutputs: options.expectedOutputs }),
       monitor(m) {
         m.addEventListener('downloadprogress', (e: Event) => {
-          const progress = e as Event & { loaded: number };
-          if (progress.loaded >= 1) {
+          // `loaded` is normally a 0..1 fraction, but some Chrome builds report
+          // loaded/total in bytes — handle both.
+          const p = e as Event & { loaded?: number; total?: number };
+          const loaded = typeof p.loaded === 'number' ? p.loaded : 0;
+          const total = typeof p.total === 'number' && p.total > 0 ? p.total : 1;
+          const fraction = Math.max(0, Math.min(loaded / total, 1));
+          if (fraction >= 1) {
             // Download complete — model is now being loaded into memory (indeterminate)
             onDownloadProgress?.(null);
           } else {
-            onDownloadProgress?.(Math.round(progress.loaded * 100));
+            onDownloadProgress?.(Math.round(fraction * 100));
           }
         });
       },
@@ -150,12 +155,18 @@ export async function initLanguageModel(
 
 // ── Prompt helpers ────────────────────────────────────────────────────────────
 
+/** Rough token estimate (~4 chars/token) for when the browser exposes no counter. */
+export function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
 export async function streamResponse(
   session: LanguageModelSession,
   input: PromptInput,
   onChunk: (text: string) => void,
   signal?: AbortSignal,
-  responseConstraint?: Record<string, unknown>
+  responseConstraint?: Record<string, unknown>,
+  onUsage?: (tokens: number) => void
 ): Promise<string> {
   const options: PromptOptions = { signal };
   if (responseConstraint) options.responseConstraint = responseConstraint;
@@ -170,6 +181,8 @@ export async function streamResponse(
       if (done) break;
       fullText += value;
       onChunk(fullText);
+      // Live, climbing token estimate while streaming (this call's output only).
+      onUsage?.(estimateTokens(fullText));
     }
   } finally {
     reader.releaseLock();

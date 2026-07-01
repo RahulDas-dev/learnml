@@ -24,7 +24,11 @@ export abstract class BaseAgent {
       {
         temperature: options?.temperature,
         topK: options?.topK,
-        expectedInputs: options?.expectedInputs,
+        // Declare English text I/O by default. Chrome's Prompt API warns and can
+        // degrade quality/safety if no output language is specified; agents can
+        // still override for multimodal or other languages.
+        expectedInputs: options?.expectedInputs ?? [{ type: 'text', languages: ['en'] }],
+        expectedOutputs: options?.expectedOutputs ?? [{ type: 'text', languages: ['en'] }],
       }
     );
     if (result.status === 'ready' && result.session) {

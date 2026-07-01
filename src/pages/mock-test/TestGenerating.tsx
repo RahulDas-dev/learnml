@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { useMockTest } from '@/hooks/useMockTest';
 
 export function TestGenerating() {
-  const { topic, level, genStage, generatedCount, planTokens, genTokens, rawStream, totalQuestions, onCancel } = useMockTest();
+  const { topic, level, genStage, generatedCount, validationTokens, planTokens, genTokens, rawStream, totalQuestions, onCancel } = useMockTest();
 
   const planning = genStage === 'planning';
   const questionsDetected = generatedCount;
@@ -13,7 +13,7 @@ export function TestGenerating() {
   const genProgress = planning ? 4 : Math.min(Math.round((questionsDetected / totalQuestions) * 100), 99);
   const fmtTokens = (n: number) => (n > 0 ? `${n.toLocaleString()} tokens` : undefined);
   const steps = [
-    { label: 'Topic validated', done: true, tokens: undefined as string | undefined },
+    { label: 'Topic validated', done: true, tokens: fmtTokens(validationTokens) },
     { label: 'Planning questions', done: !planning, tokens: fmtTokens(planTokens) },
     { label: 'Generating questions', done: allDone, tokens: fmtTokens(genTokens) },
     { label: 'Finalizing test', done: allDone, tokens: undefined as string | undefined },
@@ -104,16 +104,17 @@ export function TestGenerating() {
             </div>
 
             {/* Live stream preview */}
-            <div className="bg-secondary rounded-xl border border-border overflow-hidden">
+            <div className="bg-secondary rounded-xl border border-border overflow-hidden opacity-70">
               <div className="px-4 py-2 border-b border-border flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-foreground animate-pulse" />
                 <span className="text-xs mono text-muted-foreground">Streamed Token</span>
               </div>
-              <div className="relative px-4 py-3 h-24 overflow-hidden">
-                <pre className="text-xs text-muted-foreground mono whitespace-pre-wrap break-all leading-relaxed cursor-blink">
+              <div className="relative px-4 py-3 h-24 overflow-hidden select-none flex flex-col justify-end">
+                <pre className="text-xs text-muted-foreground mono whitespace-pre-wrap break-all leading-relaxed cursor-blink select-none pointer-events-none">
                   {rawStream.slice(-200) || '…'}
                 </pre>
-                <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-secondary to-transparent pointer-events-none" />
+                {/* fade older text out at the TOP as new tokens push up from the bottom */}
+                <div className="absolute top-0 left-0 right-0 h-8 bg-gradient-to-b from-secondary to-transparent pointer-events-none" />
               </div>
             </div>
 

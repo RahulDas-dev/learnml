@@ -1,6 +1,6 @@
 import { BaseAgent } from './BaseAgent';
 import type { AgentInitOptions } from './BaseAgent';
-import { getFullResponse, streamResponse, sessionTokenUsage } from './promptApi';
+import { getFullResponse, streamResponse, sessionTokenUsage, estimateTokens } from './promptApi';
 import type { LanguageModelSession } from './promptApi';
 import { pickDistribution, getAnswerSplit } from '@/lib/config';
 import type { SlideOutline, QuestionContentType } from '@/lib/config';
@@ -35,12 +35,14 @@ export class PlannerAgent extends BaseAgent {
     if (!this.session) throw new Error('PlannerAgent not initialised');
     const clone: LanguageModelSession = await this.session.clone();
     try {
+      const prompt = buildValidationPrompt(topic);
       const raw = await getFullResponse(
         clone,
-        buildValidationPrompt(topic),
+        prompt,
         signal,
         TopicValidationJsonSchema as Record<string, unknown>
       );
+      this.lastTokens = sessionTokenUsage(clone) || Math.ceil((prompt.length + raw.length) / 4);
       return parseTopicValidation(raw, topic);
     } finally {
       clone.destroy?.();
@@ -92,6 +94,7 @@ export class PlannerAgent extends BaseAgent {
     level: string,
     overlappedTopic = '',
     onChunk?: (text: string) => void,
+    onUsage?: (tokens: number) => void,
     signal?: AbortSignal
   ): Promise<QuestionBlueprint[]> {
     if (!this.session) throw new Error('PlannerAgent not initialised');
@@ -113,9 +116,11 @@ export class PlannerAgent extends BaseAgent {
           buildQuestionPlanPrompt(topic, level, total, distLines, multipleCount, overlappedTopic),
           onChunk ?? (() => {}),
           signal,
-          QuestionBlueprintJsonSchema as Record<string, unknown>
+          QuestionBlueprintJsonSchema as Record<string, unknown>,
+          (t) => { onUsage?.(t); }
         );
-        this.lastTokens = sessionTokenUsage(clone);
+        // Authoritative token count for the plan (real counter, or estimate fallback).
+        this.lastTokens = sessionTokenUsage(clone) || estimateTokens(raw);
         const parsed: unknown = JSON.parse(raw);
         if (Array.isArray(parsed)) planned = parsed as Array<Record<string, unknown>>;
       } catch (err: unknown) {
