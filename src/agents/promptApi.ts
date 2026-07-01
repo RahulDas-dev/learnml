@@ -60,6 +60,10 @@ export interface LanguageModelSession {
   // Token-usage counters vary by Chrome version — read via sessionTokenUsage().
   inputUsage?: number;
   tokensSoFar?: number;
+  // Accurate tokenizer for a given input — renamed across Chrome versions
+  // (measureContextUsage / measureInputUsage). Probed via measureTokens().
+  measureContextUsage?: (input: PromptInput, options?: PromptOptions) => Promise<number>;
+  measureInputUsage?: (input: PromptInput, options?: PromptOptions) => Promise<number>;
   destroy?: () => void;
 }
 
@@ -158,6 +162,22 @@ export async function initLanguageModel(
 /** Rough token estimate (~4 chars/token) for when the browser exposes no counter. */
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
+}
+
+/**
+ * Accurate token count for `text` on this session using the browser's real
+ * tokenizer when available. The method was renamed across Chrome versions
+ * (measureContextUsage / measureInputUsage), so we probe both and fall back to
+ * the ~4 chars/token estimate if neither is exposed or the call fails.
+ */
+export async function measureTokens(session: LanguageModelSession, text: string): Promise<number> {
+  try {
+    if (typeof session.measureContextUsage === 'function') return await session.measureContextUsage(text);
+    if (typeof session.measureInputUsage === 'function') return await session.measureInputUsage(text);
+  } catch {
+    /* fall through to the estimate */
+  }
+  return estimateTokens(text);
 }
 
 export async function streamResponse(

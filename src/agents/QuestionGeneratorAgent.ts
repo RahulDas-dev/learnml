@@ -1,6 +1,6 @@
 import { BaseAgent } from './BaseAgent';
 import type { AgentInitOptions } from './BaseAgent';
-import { streamResponse, sessionTokenUsage, estimateTokens } from './promptApi';
+import { streamResponse, sessionTokenUsage, estimateTokens, measureTokens } from './promptApi';
 import type { LanguageModelSession } from './promptApi';
 import type { MCQQuestion, OptionContentType } from '@/lib/config';
 import { SingleMCQQuestionJsonSchema } from './schemas';
@@ -14,11 +14,11 @@ const MAX_ATTEMPTS_PER_QUESTION = 3;
 // Hard ceiling on how long a single question may stream before we abort it.
 // Gemini Nano sometimes falls into a repetition loop (e.g. "\boldsymbol{\boldsymbol{…")
 // that never closes the JSON, which would otherwise hang the whole batch.
-const PER_QUESTION_TIMEOUT_MS = 30000;
+const PER_QUESTION_TIMEOUT_MS = 45000;
 
 // A real single-question JSON object is well under this. If the stream blows past
 // it, the model is looping — abort immediately rather than waiting for the timeout.
-const RUNAWAY_CHAR_LIMIT = 4000;
+const RUNAWAY_CHAR_LIMIT = 8000;
 
 // We reuse ONE session across questions (cloning per question is slow). To stop the
 // growing conversation from filling the context window, we "compact" it once the
@@ -29,6 +29,11 @@ const COMPACT_WHEN_REMAINING_RATIO = 0.25;
 
 // Fallback window size if the browser doesn't expose session.contextWindow.
 const ASSUMED_CONTEXT_WINDOW = 4096;
+
+// Preview builds of the Prompt API enforce a per-prompt input limit (~1024 tokens).
+// We warn (not block) if a prompt looks larger, so a silent truncation doesn't
+// masquerade as a bad question in the logs.
+const PER_PROMPT_TOKEN_LIMIT = 1024;
 
 export class QuestionGeneratorAgent extends BaseAgent {
   protected readonly systemPrompt =
@@ -199,18 +204,26 @@ export class QuestionGeneratorAgent extends BaseAgent {
       }
     };
 
+    const prompt = buildSingleQuestionPrompt(topic, level, blueprint);
+    if (estimateTokens(prompt) > PER_PROMPT_TOKEN_LIMIT) {
+      console.warn(
+        `[QuestionGenerator] prompt for "${blueprint.subtopic}" (~${estimateTokens(prompt)} tokens) may exceed the ~${PER_PROMPT_TOKEN_LIMIT}-token per-prompt limit; the model could truncate it.`
+      );
+    }
+
     try {
       const raw = await streamResponse(
         session,
-        buildSingleQuestionPrompt(topic, level, blueprint),
+        prompt,
         onChunk,
         ctrl.signal,
         SingleMCQQuestionJsonSchema as Record<string, unknown>,
         (t) => { onUsage?.(t); } // live per-question estimate
       );
-      // This turn's tokens = context delta (real), or output estimate as a fallback.
+      // This turn's tokens = context delta (real), or an accurate measurement of
+      // the output as a fallback when the browser exposes no usage counter.
       const after = sessionTokenUsage(session);
-      this.lastTokens = after > before ? after - before : estimateTokens(raw);
+      this.lastTokens = after > before ? after - before : await measureTokens(session, raw);
       const q = parseSingleQuestion(raw, blueprint);
       if (!q) {
         console.error(

@@ -1,6 +1,6 @@
 import { BaseAgent } from './BaseAgent';
 import type { AgentInitOptions } from './BaseAgent';
-import { getFullResponse, streamResponse, sessionTokenUsage, estimateTokens } from './promptApi';
+import { getFullResponse, streamResponse, sessionTokenUsage, measureTokens } from './promptApi';
 import type { LanguageModelSession } from './promptApi';
 import { pickDistribution, getAnswerSplit } from '@/lib/config';
 import type { SlideOutline, QuestionContentType } from '@/lib/config';
@@ -42,7 +42,7 @@ export class PlannerAgent extends BaseAgent {
         signal,
         TopicValidationJsonSchema as Record<string, unknown>
       );
-      this.lastTokens = sessionTokenUsage(clone) || Math.ceil((prompt.length + raw.length) / 4);
+      this.lastTokens = sessionTokenUsage(clone) || await measureTokens(clone, prompt + raw);
       return parseTopicValidation(raw, topic);
     } finally {
       clone.destroy?.();
@@ -119,8 +119,8 @@ export class PlannerAgent extends BaseAgent {
           QuestionBlueprintJsonSchema as Record<string, unknown>,
           (t) => { onUsage?.(t); }
         );
-        // Authoritative token count for the plan (real counter, or estimate fallback).
-        this.lastTokens = sessionTokenUsage(clone) || estimateTokens(raw);
+        // Authoritative token count for the plan (real counter, or accurate measurement fallback).
+        this.lastTokens = sessionTokenUsage(clone) || await measureTokens(clone, raw);
         const parsed: unknown = JSON.parse(raw);
         if (Array.isArray(parsed)) planned = parsed as Array<Record<string, unknown>>;
       } catch (err: unknown) {
